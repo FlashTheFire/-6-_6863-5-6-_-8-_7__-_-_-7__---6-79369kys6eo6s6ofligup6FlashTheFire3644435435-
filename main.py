@@ -1057,6 +1057,7 @@ def user_history(call):
 
     user = get_user(chat_id)
     history = get_history(user, 'OrderWeekDetails')
+    print(history)
     number = history['total_orders']
     amount = history['total_order_amount']
     deposit = history['total_deposit_amount']
@@ -1073,6 +1074,7 @@ def user_history(call):
     try:
         bot.edit_message_media(media=InputMediaPhoto(media='https://i.postimg.cc/HLWC80bf/20240628-092309.jpg', caption=caption, parse_mode='HTML'),chat_id=chat_id,message_id=message_id,reply_markup=keyboard)
     except Exception as e:
+        print(e)
         return
     return
 
