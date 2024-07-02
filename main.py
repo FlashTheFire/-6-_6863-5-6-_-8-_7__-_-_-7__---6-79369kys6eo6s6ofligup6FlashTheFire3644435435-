@@ -1021,9 +1021,6 @@ def callback_inline(call):
     keyboard.row(InlineKeyboardButton("🛒 Oʀᴅᴇʀ Hɪsᴛᴏʀʏ", switch_inline_query_current_chat=''),
                  InlineKeyboardButton("💰 Dᴇᴘᴏsɪᴛ Hɪsᴛᴏʀʏ", switch_inline_query_current_chat=''))
     keyboard.row(InlineKeyboardButton("🔙 Bᴀᴄᴋ Tᴏ Pʀᴏғɪʟᴇ Pᴀɢᴇ [ Usᴇʀ-Pʀᴏғɪʟᴇ ] ", callback_data='MAIN:MENU'))
-
-    user = get_user(chat_id)
-    amount, number, details = get_history(user,'OrderWeekDetails')
     purchase = 1
     caption = f"""<b>⁉️ Fʟᴀsʜ Hᴇʟᴘ Gᴜɪᴅᴇ</b> <b>[ </b><code>Hᴏᴡ ᴛᴏ Usᴇ</code><b> ]</b>
 
