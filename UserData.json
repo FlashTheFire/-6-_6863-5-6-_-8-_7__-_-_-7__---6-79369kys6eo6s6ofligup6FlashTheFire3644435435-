@@ -1,0 +1,75 @@
+{
+  "users": {
+    "5716978793": {
+      "username": "\ud835\udda5\ud835\uddc5\ud835\uddba\ud835\uddcc\ud835\uddc1",
+      "balance": 43.8,
+      "total_numbers_purchased": 2,
+      "total_spend": 16.200000000000003,
+      "total_deposit_amount": 0,
+      "current_deposit_address": {
+        "UPI": "NONE",
+        "TRX": "NONE"
+      },
+      "deposit": {
+        "96175762759": {
+          "amount": 1.0,
+          "datetime": "2024-07-01 07:25:57 AM",
+          "status": "CONFIRMED",
+          "server": "UPI",
+          "history": [
+            {
+              "datetime": "2024-07-01 07:25:57 AM",
+              "action": "ORDER_CREATED"
+            },
+            {
+              "datetime": "2024-07-01 07:29:02 AM",
+              "action": "ORDER_CONFIRMED:ADDED"
+            }
+          ]
+        }
+      },
+      "orders": {
+        "618369931": {
+          "number": "<code>+91</code> <code>9199584655</code>",
+          "message_id": 5713,
+          "sms": "WATING, 597532, 110358",
+          "buttonText": "buy_2 jx india 7.20 swiggy 1 \ud83c\uddee\ud83c\uddf3 virtual21",
+          "status": "WAITING",
+          "datetime": "2024-07-02 07:25:57 AM",
+          "amount": "7.20",
+          "server": "2",
+          "history": [
+            {
+              "datetime": "2024-07-01 11:53:09 AM",
+              "action": "ORDER_CREATED"
+            },
+            {
+              "datetime": "2024-07-01 11:54:05 AM",
+              "action": "SMS received: 597532"
+            },
+            {
+              "datetime": "2024-07-01 12:03:14 PM",
+              "action": "SMS received: 110358"
+            }
+          ]
+        }
+      },
+      "last_purchase_time": "2024-07-01 11:53:09 AM",
+      "total_dposit_amount": 1.0
+    },
+    "6653335055": {
+      "username": "N\u026a\u0274j\u1d00 G\u0280\u1d00\u1d18\u029c\u026a\u1d04",
+      "balance": 0,
+      "total_numbers_purchased": 0,
+      "total_spend": 0,
+      "total_deposit_amount": 0,
+      "current_deposit_address": {
+        "UPI": "NONE",
+        "TRX": "NONE"
+      },
+      "deposit": {},
+      "orders": {},
+      "last_purchase_time": "2024-07-01 11:50:27 AM"
+    }
+  }
+}
