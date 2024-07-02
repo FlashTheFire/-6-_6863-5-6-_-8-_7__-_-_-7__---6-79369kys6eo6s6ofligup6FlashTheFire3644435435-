@@ -671,7 +671,7 @@ def get_history(data, request_type):
         except Exception as e:
             print(f"Error processing deposit {deposit_id}: {e}")
             
-    if request_type == 'getData':
+    if request_type == 'OrderWeekDetails':
         return {
             'total_order_amount': week_total_order_amount,
             'total_orders': week_total_orders,
