@@ -1046,7 +1046,7 @@ def callback_inline(call):
 
 #Open User History
 @bot.callback_query_handler(func=lambda call: call.data.startswith('USER:HISTORY'))
-def callback_inline(call):
+def user_history(call):
     parts = call.data.split()
     chat_id = call.message.chat.id
     message_id = call.message.message_id
@@ -1056,7 +1056,7 @@ def callback_inline(call):
     keyboard.row(InlineKeyboardButton("🔙 Bᴀᴄᴋ Tᴏ Pʀᴏғɪʟᴇ Pᴀɢᴇ [ Usᴇʀ-Pʀᴏғɪʟᴇ ] ", callback_data='USER:PROFILE'))
 
     user = get_user(chat_id)
-    history = get_history(user, 'getData')
+    history = get_history(user, 'OrderWeekDetails')
     number = history['total_orders']
     amount = history['total_order_amount']
     deposit = history['total_deposit_amount']
