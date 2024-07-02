@@ -1448,6 +1448,26 @@ def callback_query(call):
             return
 
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith('$'))
+def callback_inline(call):
+    user_id = call.message.chat.id
+    parts = call.data.split()
+    server = call.data.split('_')[1].split()[0]
+    SerName = server.replace('1', '𝟷').replace('2', '𝟸').replace('3', '𝟹').replace('4', '𝟺')
+    msg = call.message.message_id
+    call_data = call.data[10:]
+    buycommand = parts[2] if len(parts) > 2 else None
+    country = parts[3] if len(parts) > 3 else None
+    price = parts[4] if len(parts) > 4 else None
+    code = parts[5] if len(parts) > 5 else None
+    service = parts[6] if len(parts) > 6 else code
+    flag = parts[7] if len(parts) > 7 else None
+    operate = parts[8] if len(parts) > 8 else None
+    if service == '1':
+        service = str(f"{code}").capitalize()
+
+    thread = threading.Thread(target=handle_auto_check, args=(call, user_id, server, code, country, price, msg, call_data, operate))
+    thread.start()
 
 
 
