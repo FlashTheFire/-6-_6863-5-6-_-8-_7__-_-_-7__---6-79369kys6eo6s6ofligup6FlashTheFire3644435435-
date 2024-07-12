@@ -1540,16 +1540,17 @@ def start_bot():
                     print(f"Failed to send error message to admin: {send_error}")
                 time.sleep(5)
 
-
-
-
 @app.route('/')
 def index():
     return "Web server is running!"
 
 def web_run():
-    app.run(host='0.0.0.0', port=5000)
-
+    try:
+        app.run(host='0.0.0.0', port=5000)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print("Port 5000 is already in use. Trying a different port...")
+            app.run(host='0.0.0.0', port=5001)
 
 if __name__ == '__main__':
     # Start threads for bot, order handling, deposit handling, and web server
@@ -1568,17 +1569,4 @@ if __name__ == '__main__':
     bot_thread.join()
     order_thread.join()
     deposit_thread.join()
-    
-    
-
-
-
-
-
-
-
-
-
-
-
-
+    web_thread.join()
