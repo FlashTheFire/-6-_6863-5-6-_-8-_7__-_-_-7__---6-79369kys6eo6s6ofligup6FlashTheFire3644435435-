@@ -10,7 +10,7 @@ sudo yum install -y python3 python3-pip
 pip3 install --upgrade pip
 
 # Install required Python packages
-pip3 install pyTelegramBotAPI requests phonenumbers pillow pytz aiohttp
+pip3 install pyTelegramBotAPI requests phonenumbers pillow pytz aiohttp flask
 
 # Install additional dependencies if needed
 # For example, for PIL (Pillow), you might need to install some additional system packages
