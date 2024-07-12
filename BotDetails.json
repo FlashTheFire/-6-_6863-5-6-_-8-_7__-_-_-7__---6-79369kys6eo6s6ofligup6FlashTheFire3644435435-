@@ -4,15 +4,17 @@
     "BotToken": "6583792268:AAHkXocIy11OvtcT4o9PiR06f17R-3AniHk",
     "UpdatedChannelId": "-1001822625927",
     "UserDataFile": "UserData.json",
+    "UserUpdateChannel": "-1002203139746",
     "OrderFile": "CurrentOrders.json",
     "DepositFile": "CurrentDeposit.json",
+    "ApiFile": "ApiFile.json",
     "ApiKeyForWeb": {
         "fastsms": "2a666666ab05ccff6bb4b0deab9d2fed",
         "5sim": {
             "v1":"eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjkxOTAwMjUsImlhdCI6MTY5NzY1NDAyNSwicmF5IjoiNWY2YWE2MzhlYTg0NGNmZjNjOTVlMTAxMjU4ZWZkNjIiLCJzdWIiOjE4NzM2NDV9.EJmkSFuBlbRuOMiJzqVdLkAcEjebz1Kpp4sCYpnSqbHQUrZHro1dVvi7NfsfB1lmyKcwP4h_ecPodI5NvTbqYzmkPwbd4WebUNy9wrTt7SsuibGWUFCB6bD7WFJ-5Bd3QL12lQBf7Vb1VCQkubggpBtr_udUyLaVGJewiy_25EkGevsPwXyxDdUJrDvg4IcYZWrGKZMdbJ5MamkI1SdzHvy-INGnGoN4zxQwNYZGHpSIYhKu92kupYmfKmoPk1NqL3d_MHdF3dQzpY_y_yrtYEduRJCdpDXF2C9oANSZ1eRy4W5WQjoIgv7dvXn2s4NYOg2VQIOF63CgNW4f6RRvTQ",
             "v2":"8c346c859a9c473683293df4af06327c"
         },
-        "smshub": "171179Uc491b6aa7cce71fc3608dec53038d44e",
+        "smshub": "171179U78335ca7ee8987956d2d64da580038f4",
         "smsactivate": "83e7036cc9cA85d1e7fd48109393b5A5"
     }
 }
