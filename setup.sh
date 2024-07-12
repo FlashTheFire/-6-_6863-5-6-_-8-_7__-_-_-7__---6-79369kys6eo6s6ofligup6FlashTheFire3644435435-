@@ -1,36 +1,31 @@
 #!/bin/bash
 
-# Update the package list
-sudo yum update -y
+# Ensure the script is run as root
+if [ "$EUID" -ne 0 ]
+  then echo "Please run as root"
+  exit
+fi
 
-# Install Python 3 and pip
-sudo yum install -y python3 python3-pip
+# Update package list and upgrade all packages
+apt-get update && apt-get upgrade -y
+
+# Install necessary system dependencies
+apt-get install -y python3 python3-pip python3-venv libjpeg-dev zlib1g-dev
+
+# Create a virtual environment
+python3 -m venv venv
+
+# Activate the virtual environment
+source venv/bin/activate
 
 # Upgrade pip
-pip3 install --upgrade pip
+pip install --upgrade pip
 
-# Install required Python packages
-pip3 install pyTelegramBotAPI requests phonenumbers pillow pytz aiohttp flask
+# Install Python packages
+pip install flask telebot requests pillow phonenumbers pytz aiohttp
 
-# Install additional dependencies if needed
-# For example, for PIL (Pillow), you might need to install some additional system packages
-sudo yum install -y libjpeg-turbo-devel zlib-devel
+# Deactivate the virtual environment
+deactivate
 
-# Clone or copy SmsChecker and DepositChecker scripts if they are hosted in a repository or a location
-# Example:
-# git clone <your-repository-url>
-
-
-# Navigate to the repository directory
-cd /home/ec2-user/FlashTheFireAlwaysOnFireDontCopyMotherHindJaiHinfuRastraJaiShreeRamJaiShreeHanuman
-
-# Pull the latest changes
-git pull origin main
-
-echo "Repository updated successfully!"
-
-# Alternatively, if they are on your local machine, you can SCP them to the EC2 instance:
-# scp SmsChecker.py ec2-user@<your-ec2-instance-ip>:/home/ec2-user/
-# scp DepositChecker.py ec2-user@<your-ec2-instance-ip>:/home/ec2-user/
-
-echo "Setup completed successfully!"
+# Display a message indicating setup completion
+echo "Setup complete. To activate the virtual environment, run 'source venv/bin/activate'."
