@@ -1,5 +1,5 @@
 import telebot
-from telebot.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, InputTextMessageContent, InlineQueryResultArticle
+from telebot.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, InputTextMessageContent, InlineQueryResultArticle, WebAppInfo
 import time
 import requests
 import difflib
@@ -26,7 +26,8 @@ import pytz
 import random
 import threading
 from DepositChecker import mainForDeposit, add_deposit, remove_deposit
-
+from flask import Flask, request, jsonify
+app = Flask(__name__)
 
 
 
@@ -39,7 +40,7 @@ def load_data(FILENAME,TYPE):
                 return json.load(file)
         else:
             return {}
-         
+
 response = load_data('BotDetails.json','r')
 BotToken = response["BotToken"]
 comissionPurchase = response["comissionPurchase"]
@@ -53,8 +54,8 @@ fastsms = ApiKeyForWeb["fastsms"]
 UserDataFile = response["UserDataFile"]
 OrderFile = response["OrderFile"]
 DepositFile = response["DepositFile"]
-
-
+UserUpdateChannel = response["UserUpdateChannel"]
+ApiFile = response["ApiFile"]
 
 bot = telebot.TeleBot(BotToken)
 
@@ -72,7 +73,7 @@ def AfterMin(minutes):
     hour = ist_future.hour % 12 or 12
     am_pm = "Aᴍ" if ist_future.hour < 12 else "Pᴍ"
     formatted_time = f"<code>{hour:02}</code><b>:</b><code>{ist_future.minute:02}</code> <code>{am_pm}</code>"
-    
+
     return formatted_time
 
 
@@ -81,7 +82,7 @@ def convertTime(timestamp):
     utc_time = utc_time.replace(tzinfo=pytz.utc)
     ist_time = utc_time.astimezone(pytz.timezone('Asia/Kolkata'))
     return ist_time.strftime('%Y-%m-%d %I:%M:%S %p')
-        
+
 
 def time_ago(buyed_time):
     current_time = currentTime()
@@ -92,9 +93,9 @@ def time_ago(buyed_time):
     seconds = time_difference.seconds
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    
+
     months, days = divmod(days, 30)
-    
+
     if months > 0:
         return f"{months} Mᴏɴᴛʜ{'s' if months > 1 else ''} {days} Dᴀʏ{'s' if days > 1 else ''}"
     elif days > 0:
@@ -135,26 +136,57 @@ def update_user(user_id, new_data):
     save_user_data(data)
 
 
-def get_user(user_id):
+def get_user(user_id,user_name=None):
     """Retrieve user data or initialize it if the user doesn't exist."""
     data = load_user_data()
     user_id = str(user_id)
     if user_id not in data['users']:
-        user_name = bot.get_chat(user_id).first_name
         data['users'][user_id] = {
             'username': f'{user_name}',
             'balance': 0,
             'total_numbers_purchased': 0,
             'total_spend': 0,
             'total_deposit_amount': 0,
+            'user_forum_id': "NONE",
+            'user_currency': {'Iɴʀ [₹]': True},
             'current_deposit_address':{"UPI":"NONE","TRX":"NONE"},
             'deposit': {},
             'orders': {},
             'last_purchase_time': currentTime()
         }
         save_user_data(data)
-        
+
     return data['users'][user_id]
+
+
+
+def create_forum_topic(chat_id, topic_name):
+    random_colors = [
+    0x6FB9F0,   # RGB: 111, 185, 240
+    0xFFD67E,   # RGB: 255, 214, 126
+    0xCB86DB,   # RGB: 203, 134, 219
+    0x8EEE98,   # RGB: 142, 238, 152
+    0xFF93B2,   # RGB: 255, 147, 178
+    0xFB6F5F    # RGB: 251, 111, 95
+    ]
+    icon_color = random.choice(random_colors)
+    url = f'https://api.telegram.org/bot{BotToken}/createForumTopic'
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'chat_id': UserUpdateChannel,
+        'name': topic_name,
+        'icon_color': icon_color
+    }
+    json_payload = json.dumps(payload)
+    response = requests.post(url, headers=headers, data=json_payload)
+    if response.status_code == 200:
+        result = response.json()
+        if result['ok']:
+            return result['result']
+
+    return None
 
 
 
@@ -182,7 +214,7 @@ def update_balance(user_id, action_type, amount, method_or_card=None):
                 return {'status': 'error', 'message': f'{wait_time}'}
         return {'status': 'success', 'message': 'Purchase successful'}
 
-    
+
     if action_type == 'create':
         user['deposit'][amount] = {
             'amount': 0,
@@ -206,8 +238,9 @@ def update_balance(user_id, action_type, amount, method_or_card=None):
         new_data = {'deposit': user['deposit'],'current_deposit_address':user['current_deposit_address']}
         update_user(user_id, new_data)
         return {'status': 'success','orderId':amount}
-    
+
     if action_type == 'deposit':
+        is_single_id = len(user['deposit']) == 1
         order_id = method_or_card
         amount = float(amount)
         user['balance'] += amount
@@ -217,12 +250,14 @@ def update_balance(user_id, action_type, amount, method_or_card=None):
         user['current_deposit_address']['UPI'] = "NONE"
         details['amount'] = amount
         details['datetime'] = currentTime()
-        details['history'].append({'datetime': currentTime(),'action': 'ORDER_CONFIRMED:ADDED'})
+        details['history'].append({'datetime': currentTime(),'action':'ORDER_CONFIRMED:ADDED'})
         del details['time']
-        new_data = {'balance': user['balance'],'total_dposit_amount':user['total_deposit_amount'],'deposit':user['deposit'],'current_deposit_address':user['current_deposit_address']}
+        new_data = {'balance': user['balance'],'total_deposit_amount':user['total_deposit_amount'],'deposit':user['deposit'],'current_deposit_address':user['current_deposit_address']}
         update_user(user_id, new_data)
-        return {'status': 'success','orderId':order_id}
-    
+        if is_single_id == True:
+            return {'status': 'success','orderId':order_id,'is_new':True}
+        return {'status': 'success','orderId':order_id,'is_new':False}
+
 
 def format_message(original_text):
     modified_text = re.sub(r'⏱ Nᴜᴍʙᴇʀ Is Vᴀʟɪᴅ Tɪʟʟ \d{2}:\d{2} [AP]M', '⏱ Number is Cancelled (💰 Refund ).', original_text)
@@ -236,7 +271,7 @@ def manage_order(user_id, order_id, action,amount,server=None,sms=None,number=No
     """Create, update, finish, or cancel an order."""
     data = load_user_data()
     user = get_user(user_id)
-    
+
     if action == 'create':
         user['orders'][order_id] = {
             'number': number,
@@ -259,7 +294,7 @@ def manage_order(user_id, order_id, action,amount,server=None,sms=None,number=No
         new_data = {'balance': user['balance'], 'orders': user['orders'],'total_spend':user['total_spend'],'last_purchase_time': user['last_purchase_time'],'total_numbers_purchased':user['total_numbers_purchased']}
         update_user(user_id, new_data)
         return {'status': 'success','orderId':order_id,'number':number}
-    
+
     elif action == 'update':
         orderId = user['orders'][order_id]
         status = orderId.get('status')
@@ -281,8 +316,8 @@ def manage_order(user_id, order_id, action,amount,server=None,sms=None,number=No
                 return message
             return {'status':'error','message':'SMS_ALLREDY_RECEVIED'}
         return {'status':'error','message':'ORDER_NOT_FOUND'}
-        
-    
+
+
     elif action == 'cancel':
         if user['orders'][order_id]['status'] != 'FINISHED' and user['orders'][order_id]['status'] == 'WAITING':
             amount_refunded_str = user['orders'][order_id]['amount']
@@ -301,7 +336,6 @@ def manage_order(user_id, order_id, action,amount,server=None,sms=None,number=No
         return {'status': 'error', 'message': 'Order not found or cannot be canceled'}
     else:
         return {'status': 'error', 'message': 'Order not found or cannot be canceled'}
-
 
 
 
@@ -348,13 +382,13 @@ def startHandle(message,type):
     keyboard.row(InlineKeyboardButton("🛒 Sᴇʀᴠɪᴄᴇs",switch_inline_query_current_chat=''),InlineKeyboardButton("🔥 Tᴏᴘ Sᴇʀᴠɪᴄᴇs",callback_data=f"/topService"))
     keyboard.row(InlineKeyboardButton("👨‍💻 Wᴀʟʟᴇᴛ",callback_data=f"USER:PROFILE"),InlineKeyboardButton("💰 Rᴇᴄʜᴀʀɢᴇ",callback_data=f"USER:DEPOSIT"))
     keyboard.row(InlineKeyboardButton("🔗 Rᴇғғᴇʀᴀʟ",callback_data=f"/refferal"),InlineKeyboardButton("🎁 Rᴇᴡᴀʀᴅs",callback_data=f"/rewards"))
-    keyboard.row(InlineKeyboardButton("⁉️ Hᴇʟᴘ",callback_data=f"USER:SUPPORT"),InlineKeyboardButton("⚙️ Sᴇᴛᴛɪɴɢs",callback_data=f"/settings"))
+    keyboard.row(InlineKeyboardButton("⁉️ Hᴇʟᴘ",callback_data=f"USER:SUPPORT"),InlineKeyboardButton("⚙️ Sᴇᴛᴛɪɴɢs",callback_data=f"USER:SETTINGS:CURRENCY"))
     link = 'https://i.postimg.cc/9fyK1yCK/IMG-20240607-023137-160.jpg'
     chat_id = message.chat.id
     first_name = message.chat.first_name
     message_id = message.message_id
-    
-    user = get_user(chat_id)
+
+    user = get_user(chat_id,first_name)
     purchase = f"{user['total_numbers_purchased']:.0f}"
     balance = f"{user['balance']:.2f}"
     rank = 'Bronze'
@@ -378,8 +412,8 @@ def startHandle(message,type):
         )
         except Exception as e:
             return
-        
-    
+
+
 #profile image
 def get_telegram_profile_photo(bot_token, user_id):
     url = f'https://api.telegram.org/bot{bot_token}/getUserProfilePhotos'
@@ -466,6 +500,36 @@ def qr_code(rect_img_path, order_id, size, position, radius):
     img_byte_arr = img_byte_arr.getvalue()
     return img_byte_arr
 
+user_selected_buttons = {}
+def create_inline_markup(user_id):
+    markup = InlineKeyboardMarkup()
+    button_labels = [
+        ['Iɴʀ [₹]', 'Usᴅ [$]'],
+        ['Eᴜʀ [€]', 'Gʙᴘ [£]'],
+        ['Jᴘʏ [¥]', 'Aᴜᴅ [$]'],
+        ['Cɴʏ [¥]', 'Cʜғ [Fʀ.]'],
+        ['Cᴀᴅ [$]', 'Kʀᴡ [₩]'],
+        ['Rᴜʙ [₽]', 'Mxɴ [$]'],
+        ['Bʀʟ [R$]', 'Pʜᴘ [₱]'],
+        ['Sɢᴅ [$]', 'Hᴋᴅ [$]']
+    ]
+    flag_emojis = {
+        'Iɴʀ [₹]': '🇮🇳', 'Usᴅ [$]': '🇺🇸', 'Eᴜʀ [€]': '🇪🇺', 'Gʙᴘ [£]': '🇬🇧',
+        'Jᴘʏ [¥]': '🇯🇵', 'Aᴜᴅ [$]': '🇦🇺', 'Cɴʏ [¥]': '🇨🇳', 'Cʜғ [Fʀ.]': '🇨🇭',
+        'Cᴀᴅ [$]': '🇨🇦', 'Kʀᴡ [₩]': '🇰🇷', 'Rᴜʙ [₽]': '🇷🇺', 'Mxɴ [$]': '🇲🇽',
+        'Bʀʟ [R$]': '🇧🇷', 'Pʜᴘ [₱]': '🇵🇭', 'Sɢᴅ [$]': '🇸🇬', 'Hᴋᴅ [$]': '🇭🇰'
+    }
+    user = get_user(user_id)
+    selected_buttons = user['user_currency']
+    for row in button_labels:
+        button_row = []
+        for label in row:
+            button_text = f"{flag_emojis[label]} {label}"
+            if label in selected_buttons:
+                button_text = f"🔘 {button_text}"
+            button_row.append(InlineKeyboardButton(text=button_text, callback_data=f"USER:SETTINGS:CURRENCY{label}"))
+        markup.row(*button_row)
+    return markup
 
 
 #fetch url
@@ -500,14 +564,14 @@ def fetch_url(server,status,id):
 
     if server == "2":
         url = f"http://api1.5sim.net/stubs/handler_api.php?api_key={fivesim}&action=setStatus&status={status[server]}&id={id}"
-            
+
     if server == "3":
         url = f"https://smshub.org/stubs/handler_api.php?api_key={smshub}&action=setStatus&status={status[server]}&id={id}"
 
     if server == "4":
         url = f"https://api.sms-activate.io/stubs/handler_api.php?api_key={smsactivate}&action=setStatus&status={status[server]}&id={id}"
-            
-        
+
+
     response = requests.get(url)
     response.raise_for_status()
     response_text = response.text.strip()
@@ -529,7 +593,7 @@ def fetch_url(server,status,id):
         'BAD_STATUS': {'status': 'error', 'message': 'ALLREDY_CANCELED'},
     }
     return response_mapping.get(response_text, {'status': 'error', 'message': f"Unexpected response: {response_text}"})
-    
+
 
 
 #fetch service 
@@ -537,18 +601,23 @@ def fetch_service(name, service,code):
     urls = [
         f'https://flashsms.in/BotFile/serviceList.php?service={code}',
         f'https://api1.5sim.net/stubs/handler_api.php?api_key={fivesim}&action=getPrices&service={name}',
-        f'https://smshub.org/stubs/handler_api.php?api_key={smshub}&action=getPrices&service={service}',
-        f'https://api.sms-activate.org/stubs/handler_api.php?api_key={smsactivate}&action=getPrices&service={service}'
+        f'https://smshub.org/stubs/handler_api.php?api_key={smshub}&action=getPrices&service={service}'
     ]
     responses = [fetch_data(url) for url in urls if fetch_data(url)]
-    result = {str(i + 1): json.loads(response) for i, response in enumerate(responses)}
+    result = {}
+    for i, response in enumerate(responses):
+        try:
+            result[str(i + 1)] = json.loads(response)
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON for response {i+1}: {e}")
+            result[str(i + 1)] = None
     json_result = json.dumps(result, indent=4)
     parsed_result = json.loads(json_result)
     return parsed_result
 
 
 #sort list 1 and 2
-def sort_data_ser1or3(url, server):
+def sort_data_ser1or3(url, server,country=None):
     data = requests.get(url).json()
     if server in ['1', '3']:
         multiplier = 86.9565 if server == '3' else 1
@@ -575,7 +644,7 @@ def sort_data_ser1or3(url, server):
                         lowest_cost = cost
                         lowest_cost_virtual = virtual_id
                 if lowest_cost_virtual:
-                    
+
                     output.append({lowest_cost: [f"{lowest_cost_virtual}_{country}"]})
             output.sort(key=lambda x: list(x.keys())[0])
             return output
@@ -614,7 +683,7 @@ def generate_markup(page,data,server, service, name, buycommand):
                     if code != "Unknown":
                         price = f'{comissionPurchase * price:.2f}'
                         markup.add(InlineKeyboardButton(f" {code} {country.capitalize()} ↝ 💎 {price}", callback_data=f"buy_{server} {buycommand} {country_code} {price} {service} 1 {code} {virtual_id}"))
-        
+
 
 
     nav_buttons = []
@@ -639,65 +708,132 @@ def get_history(data, request_type):
     week_total_order_amount = 0.0
     week_total_orders = 0
     week_total_deposit_amount = 0.0
+    week_total_deposit = 0
 
     order_details = []
     deposit_details = []
 
     # Determine start of the week
     week_start = (current_date - timedelta(days=current_date.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # Process orders
-    for order_id, order in data['orders'].items():
-        try:
-            order_datetime = datetime.strptime(order['datetime'], '%Y-%m-%d %I:%M:%S %p')
-            order_datetime = india_tz.localize(order_datetime) if order_datetime.tzinfo is None else order_datetime
-            if order_datetime >= week_start:
-                week_total_order_amount += float(order['amount'])
-                week_total_orders += 1
-                order_details.append({'order_id': order_id, 'datetime': order_datetime.strftime('%Y-%m-%d %I:%M:%S %p'), 'details': order})
-        except Exception as e:
-            print(f"Error processing order {order_id}: {e}")
-
-    # Process deposits
-    for deposit_id, deposit in data['deposit'].items():
-        try:
-            if deposit['status'] == "WAITING":
-                continue
-            deposit_datetime = datetime.strptime(deposit['datetime'], '%Y-%m-%d %I:%M:%S %p')
-            deposit_datetime = india_tz.localize(deposit_datetime) if deposit_datetime.tzinfo is None else deposit_datetime
-            if deposit_datetime >= week_start:
-                week_total_deposit_amount += float(deposit['amount'])
-            deposit_details.append({'deposit_id': deposit_id, 'datetime': deposit_datetime.strftime('%Y-%m-%d %I:%M:%S %p'), 'details': deposit})
-        except Exception as e:
-            print(f"Error processing deposit {deposit_id}: {e}")
-            
+    
     if request_type == 'OrderWeekDetails':
+        # Process orders
+        for order_id, order in data['orders'].items():
+            try:
+                order_datetime = datetime.strptime(order['datetime'], '%Y-%m-%d %I:%M:%S %p')
+                order_datetime = india_tz.localize(order_datetime) if order_datetime.tzinfo is None else order_datetime
+                if order_datetime >= week_start:
+                    week_total_order_amount += float(order['amount'])
+                    week_total_orders += 1
+            except Exception as e:
+                print(f"Error processing deposit {order_id}: {e}")
+
+        # Process deposits
+        for deposit_id, deposit in data['deposit'].items():
+            try:
+                if deposit['status'] == "WAITING":
+                    continue
+                deposit_datetime = datetime.strptime(deposit['datetime'], '%Y-%m-%d %I:%M:%S %p')
+                deposit_datetime = india_tz.localize(deposit_datetime) if deposit_datetime.tzinfo is None else deposit_datetime
+                if deposit_datetime >= week_start:
+                    week_total_deposit_amount += float(deposit['amount'])
+                    week_total_deposit += 1
+            except Exception as e:
+                print(f"Error processing deposit {deposit_id}: {e}")
+            
         return {
             'total_order_amount': week_total_order_amount,
             'total_orders': week_total_orders,
-            'total_deposit_amount': week_total_deposit_amount
+            'total_deposit_amount': week_total_deposit_amount,
+            'total_deposit': week_total_deposit
         }
-    elif request_type == 'ORDER:DETAILS':
-        return {'orders': order_details}
-    elif request_type == 'DEPOSIT:DETAILS':
-        return {'deposits': deposit_details}
-    elif request_type == 'DEPOSIT:ORDER':
-        return {'deposits': deposit_details, 'orders': order_details}
+
+    # Process orders
+    if request_type == 'ORDER:DETAILS':
+        for order_id, order in data['orders'].items():
+            try:
+                order_datetime = datetime.strptime(order['datetime'], '%Y-%m-%d %I:%M:%S %p')
+                order_datetime = india_tz.localize(order_datetime) if order_datetime.tzinfo is None else order_datetime
+                order_details.append({'order_id': order_id, 'datetime': order_datetime.strftime('%Y-%m-%d %I:%M:%S %p'), 'details': order})
+                week_total_order_amount += float(order['amount'])
+                week_total_orders += 1
+            except Exception as e:
+                print(f"Error processing order1 {order_id}: {e}")
+            
+        return {
+            'orders': order_details,
+            'total_order_amount': week_total_order_amount, 
+            'total_orders': week_total_orders
+        }
+
+
+
+    if request_type == 'DEPOSIT:DETAILS':
+        for deposit_id, deposit in data['deposit'].items():
+            try:
+                if deposit['status'] == "WAITING":
+                    continue
+                deposit_datetime = datetime.strptime(deposit['datetime'], '%Y-%m-%d %I:%M:%S %p')
+                deposit_datetime = india_tz.localize(deposit_datetime) if deposit_datetime.tzinfo is None else deposit_datetime
+                deposit_details.append({'deposit_id': deposit_id, 'datetime': deposit_datetime.strftime('%Y-%m-%d %I:%M:%S %p'), 'details': deposit})
+                week_total_deposit_amount += float(deposit['amount'])
+                week_total_deposit += 1
+            except Exception as e:
+                print(f"Error processing deposit2 {deposit_id}: {e}")       
+        return {
+            'deposits': deposit_details,
+            'total_deposit_amount': week_total_deposit_amount,
+            'total_deposit': week_total_deposit}
+
+    if request_type == 'DEPOSIT:ORDER':
+        for order_id, order in data['orders'].items():
+            try:
+                order_datetime = datetime.strptime(order['datetime'], '%Y-%m-%d %I:%M:%S %p')
+                order_datetime = india_tz.localize(order_datetime) if order_datetime.tzinfo is None else order_datetime
+                order_details.append({'order_id': order_id, 'datetime': order_datetime.strftime('%Y-%m-%d %I:%M:%S %p'), 'details': order})
+                week_total_order_amount += float(order['amount'])
+                week_total_orders += 1
+            except Exception as e:
+                print(f"Error processing order1 {order_id}: {e}")
+        
+        for deposit_id, deposit in data['deposit'].items():
+            try:
+                if deposit['status'] == "WAITING":
+                    continue
+                deposit_datetime = datetime.strptime(deposit['datetime'], '%Y-%m-%d %I:%M:%S %p')
+                deposit_datetime = india_tz.localize(deposit_datetime) if deposit_datetime.tzinfo is None else deposit_datetime
+                deposit_details.append({'deposit_id': deposit_id, 'datetime': deposit_datetime.strftime('%Y-%m-%d %I:%M:%S %p'), 'details': deposit})
+                week_total_deposit_amount += float(deposit['amount'])
+                week_total_deposit += 1
+            except Exception as e:
+                print(f"Error processing deposit2 {deposit_id}: {e}")
+    
+        return {
+            'deposits': deposit_details, 
+            'orders': order_details,
+            'details': {
+                'total_order_amount': week_total_order_amount,
+                'total_orders': week_total_orders,
+                'total_deposit_amount': week_total_deposit_amount,
+                'total_deposit': week_total_deposit
+            }
+        }
     else:
         raise ValueError("Invalid request type")
 
 
-def Get_Ser_Price_AD(server, service):
+
+def Get_Ser_Price_AD(server, service,type=None,country=None):
     if server == "1":
-        request = sort_data_ser1or3(f'https://flashsms.in/BotFile/serviceList.php?service={service}',"1")
+        request = sort_data_ser1or3(f'https://flashsms.in/BotFile/serviceList.php?service={service}',"1",country)
     if server == "2":
-        request = sort_data_ser1or3(f'https://api1.5sim.net/stubs/handler_api.php?api_key={fivesim}&action=getPrices&service={service}',"2")
+        request = sort_data_ser1or3(f'https://api1.5sim.net/stubs/handler_api.php?api_key={fivesim}&action=getPrices&service={service}',"2",country)
     if server == "3":
-        request = sort_data_ser1or3(f'https://smshub.org/stubs/handler_api.php?api_key={smshub}&action=getPrices&service={service}',"3")
+        request = sort_data_ser1or3(f'https://smshub.org/stubs/handler_api.php?api_key={smshub}&action=getPrices&service={service}',"3",country)
     if server == "4":
         request= sort_data_ser1or3(f'https://api.sms-activate.org/stubs/handler_api.php?api_key={smsactivate}&action=getPrices&service={service}',"4")
     return request
-    
+
 
 #format phone number
 def format_phone_number(phone_number: str) -> str:
@@ -715,7 +851,7 @@ def format_phone_number(phone_number: str) -> str:
 #buy number
 def get_phone_number_id(server,service, country,price,message, message_id,buttonText,ServiceServer=None):
     user_id = message.chat.id
-    if server in ["1","2","3","4"]:
+    if server in ["1","2","3"]:
         if server == "1":
             api_key = fastsms
             ser = 1
@@ -742,7 +878,7 @@ def get_phone_number_id(server,service, country,price,message, message_id,button
                 if match:
                     id_number = match.group(1)
                     phone_number = format_phone_number(f"+{match.group(2)}")
-                    new_order = {"server_id": ser,"api_key":f"{api_key}","order_id":f"{id_number}", "user_id": f"{message.chat.id}","time":time.time()}
+                    new_order = {"server_id": ser,"api_key":f"{api_key}","order_id":f"{id_number}", "user_id": f"{message.chat.id}","time":time.time(),"status":"pending","number":f"{phone_number}","type":"user"}
                     add_order(OrderFile, new_order)
                     data = manage_order(user_id, id_number, 'create',amount=price,server=server,sms='WATING',number=phone_number, message_id=message_id,buttonText=buttonText)
                     return {
@@ -756,11 +892,11 @@ def get_phone_number_id(server,service, country,price,message, message_id,button
             elif response_text == 'NO_NUMBERS':
                 return {'status': 'error', 'message': 'No numbers available'}
             elif response_text == '':
-                return {'status': 'error', 'message': 'Wrong API key'}
+                return {'status': 'error', 'message': 'Something went wrong'}
             elif response_text == 'NO_BALANCE':
-                return {'status': 'error', 'message': 'Insufficient balance'}
+                return {'status': 'error', 'message': 'adding new numbers'}
             elif response_text == 'API_KEY_NOT_VALID':
-                return {'status': 'error', 'message': 'Invalid API key'}
+                return {'status': 'error', 'message': 'Invalid key'}
             else:
                 return {'status': 'error', 'message': 'Unknown error: ' + response_text}
 
@@ -799,7 +935,7 @@ def format_message(original_text,message):
         modified_text_lines[0] = f"<blockquote><b>{modified_text_lines[0]} </b></blockquote>"
     formatted_text = '\n'.join(modified_text_lines)
     return formatted_text
-    
+
 
 #format message
 def format_message(original_text,message):
@@ -818,16 +954,17 @@ def format_message(original_text,message):
         modified_text_lines[0] = f"<blockquote><b>{modified_text_lines[0]} </b></blockquote>"
     formatted_text = '\n'.join(modified_text_lines)
     return formatted_text
-    
+
 
 #Recieve Message
 def recieveMessage(message):
-    #print(f"${time.time()}\n{message}")
+    print(f"${time.time()}\n{message}")
     checker = []
     if message == "No orders to process. Waiting for new orders.":
         return
-    if message.get('status') == 'timeout':
-        remove_order(OrderFile,message.get('order_id'))
+    if str(message.get('status')) == str('timeout'):
+        data = remove_order(OrderFile,message.get('order_id'))
+        print(data)
         return
     else:
         checker = message.get('status','unknown')
@@ -862,7 +999,7 @@ def recieveMessage(message):
                 sms_text = get_sms_text_by_code(order_id, sms)
                 if sms_text:
                     text += f'\n<pre><code class="language-📨 Mᴇssᴀɢᴇ ❯ ">{sms_text}</code></pre>'
-            
+
             bot.send_message(chat_id=user_id,text=text,parse_mode='HTML',reply_to_message_id=message_id)
             u = fetch_url(f"{server}",'NEXT',order_id)
             if u['status'] == 'error' and u['message'] == 'ORDER_FINISHED':
@@ -874,7 +1011,7 @@ def recieveMessage(message):
             u = fetch_url(f"{server}",'NEXT',order_id)
             if u['status'] == 'error' and u['message'] == 'ORDER_FINISHED':
                 remove_order(OrderFile,order_id)#TIMED_OUT
-            
+
 
     if checker == 'canceled':
         remove_order(OrderFile,order_id)
@@ -882,9 +1019,7 @@ def recieveMessage(message):
             amount_refunded = float(amount)
             user['balance'] += amount_refunded
             user['total_spend'] -= amount_refunded 
-            order['status'] = 'REFUNDED'
-            order['sms'] = 'EXPIRED'
-            history.append({'datetime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),'action': 'ORDER_EXPIRED:REFUNDED'})
+            del user['orders'][order_id]
             new_data = {'balance': user['balance'],'orders': user['orders'],'total_spend': user['total_spend']}
             update_user(user_id, new_data)
             keyboard = InlineKeyboardMarkup()
@@ -901,15 +1036,13 @@ def recieveMessage(message):
 
 
 def recieveDeposit(message):
-    #print(message)
     if message == "No orders to process. Waiting for new orders.":
         return
-
     remove_order(DepositFile,message.get('order_id'))
     user_id = message.get('user_id')
     order_id = message.get('order_id')
     if message.get('status') == 'timeout':
-        
+
         update_balance(user_id, 'cancel', order_id,'UPI')
         return
 
@@ -919,7 +1052,14 @@ def recieveDeposit(message):
     paid_from = data['GATEWAYNAME']
     paid_type = data['PAYMENTMODE']
     date = data['TXNDATE']
-    update_balance(user_id, 'deposit', amount, order_id)
+    user = get_user(user_id)
+    update = update_balance(user_id, 'deposit', amount, order_id)
+    if update['status'] == 'success' and update['is_new'] == True:
+        forum = create_forum_topic(user_id, f"❯ {user['username']} [{user_id}]")
+        user['user_forum_id'] = forum['message_thread_id']
+        new_data = {'user_forum_id': user['user_forum_id']}
+        update_user(user_id, new_data)
+        
     keyboard = InlineKeyboardMarkup()
     keyboard.row(InlineKeyboardButton("🛒 Bᴜʏ Sᴇʀᴠɪᴄᴇ Nᴏᴡ",switch_inline_query_current_chat=''))
     text = f"""<b>#Uᴘɪ_Cᴀʀᴅ_Dᴇᴘᴏsɪᴛ ❯</b>
@@ -934,6 +1074,29 @@ def recieveDeposit(message):
 <i>Sᴜᴄᴄᴇssғᴜʟʟʏ Cʀᴇᴅɪᴛᴇᴅ</i> <code>{amount}</code> 💎 
 <i>Tᴏ Yᴏᴜʀ Aᴄᴄᴏᴜɴᴛ.</i>"""
     bot.send_message(chat_id=user_id,text=text,parse_mode='HTML',reply_markup=keyboard)
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(InlineKeyboardButton("🔗 Usᴇʀ",url=f'tg://openmessage?user_id={user_id}'),InlineKeyboardButton("🔍 Dᴇᴛᴀɪʟs",callback_data=f'[DETAILS] {user_id}'))
+    message_text = f"""<b>#Uᴘɪ_Cᴀʀᴅ_Dᴇᴘᴏsɪᴛ ❯</b>
+
+<b>Tʀᴀɴsᴀᴄᴛɪᴏɴ Dᴇᴛᴀɪʟs</b>
+<b>💰 Aᴍᴏᴜɴᴛ Cʀᴇᴅɪᴛᴇᴅ »</b> <code>{amount}</code> 💎  
+<b>💳 Oʀᴅᴇʀ Iᴅ »</b> <code>{order_id}</code>
+<b>👤 Pᴀɪᴅ Fʀᴏᴍ »</b> <code>{paid_from}</code>
+<b>🕊 Pᴀʏᴍᴇɴᴛ Tʏᴘᴇ »</b> <code>{paid_type}</code>
+<b>💎 Usᴇʀ Bᴀʟᴀɴᴄᴇ »</b> <code>{user['balance']:.2f}</code>"""
+    msg = bot.send_message(chat_id=UserUpdateChannel, text=message_text, message_thread_id=user['user_forum_id'],reply_markup=keyboard,parse_mode='HTML')
+    message_id = msg.message_id
+    chat_id = msg.chat.id
+    if str(chat_id).startswith('-100'):
+        chat_id = 'c/' + str(chat_id)[4:]
+
+    forum = user['user_forum_id']
+    link = f'https://t.me/{chat_id}/{forum}/{message_id}'
+    text = f'<b>💎 Nᴇᴡ Dᴇᴘᴏsɪᴛ</b>\n[<code>{paid_type}</code>][<code>{amount}</code>][<code>{user_id}</code>]'
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(InlineKeyboardButton("🔗 Usᴇʀ",url=f'tg://openmessage?user_id={user_id}'),InlineKeyboardButton("🔍 Dᴇᴛᴀɪʟs",url=link))
+    bot.send_message(chat_id=UserUpdateChannel, text=text,reply_markup=keyboard,parse_mode='HTML')
+    return
 
 
 
@@ -957,748 +1120,364 @@ def recieveDeposit(message):
 
 
 
+#api keys
 
-def update_progress(progress):
-    bar_length = 10
-    block = int(round(bar_length * progress))
-    progress_bar = '[{}{}] {:.0f}%'.format('■' * block, '□' * (bar_length - block), progress * 100)
-    return progress_bar
+def validate_api_key(api_key):
+    api_data = load_data(ApiFile,'r')
+    if api_key not in api_data:
+        return {'status':'error','message':'Invalid or missing API key','short_code':'BAD_KEY'}
+    return None
 
-def handle_auto_check(call, user_id, server, code, country, price, msg, call_data, operate):
-    bar = {
-        "search": {1: "🔎", 2: "🔍", 3: "🔎", 4: "🔍", 5: "🔎", 6: "🔍", 7: "🔎", 8: "🔍", 9: "🔎", 10: "🔍"},
-        "time": {1: "⏳", 2: "⌛", 3: "⏳", 4: "⌛", 5: "⏳", 6: "⌛", 7: "⏳", 8: "⌛", 9: "⏳", 10: "⌛"},
-        "loading": {1: "↺", 2: "⟲", 3: "↻", 4: "⟳", 5: "↺", 6: "⟲", 7: "↻", 8: "⟳", 9: "↺", 10: "⟲"}
-    }
+def get_api_number(user_id, service, country, server, buycommand, name, code, server_data):
+    countryFlags = load_data('countriesFlag.json', 'r')
+    url = {}
+    if str(server) == str('1'):
+        api_key = fastsms
+        for item in server_data:
+            for price, numbers in item.items():
+                if country in numbers:
+                    amount = price
+                    flag = countryFlags['3'].get(country, "🏴‍☠️")
+                    url = f"https://fastsms.su/stubs/handler_api.php?api_key={api_key}&action=getNumber&service={code}&country={country}"
+                    buttonText = f'buy_{server} {buycommand} {country} {amount} {service} {name} {flag}'
+                    break
+    elif str(server) == '2':
+        api_key = fivesim
+        for item in server_data:
+            for price, countries in item.items():
+                for entry in countries:
+                    operator, country_name = entry.split('_')
+                    if country_name.lower() == country.lower():
+                        amount = price
+                        flag = countryFlags['2'].get(country,"🏴‍☠️")
+                        url = f"http://api1.5sim.net/stubs/handler_api.php?api_key={api_key}&action=getNumber&service={code}&operator={operator}&country={country}" 
+                        buttonText = f'buy_{server} {buycommand} {country} {amount} {service} {name} {flag} {operator}'
+                        break
+    elif str(server) == str('3'):
+        api_key = smshub
+        for item in server_data:
+            for price, numbers in item.items():
+                if country in numbers:
+                    amount = price
+                    flag = countryFlags['3'].get(country, "🏴‍☠️")
+                    url = f"https://smshub.org/stubs/handler_api.php?api_key={api_key}&action=getNumber&service={code}&country={country}"
+                    buttonText = f'buy_{server} {buycommand} {country} {amount} {service} {name} {flag}'
+                    break
+    if not url:
+        return {'status': 'error', 'message': 'Missing required parameter: country','short_code': 'BAD_COUNTRY'}, 400
+
+    checker = update_balance(user_id, 'checking', amount)
+    if checker.get('status') == 'error' and checker.get('status') != 'success':
+        return {'status': 'error', 'message': 'No balance remains to buy this service','short_code': 'NO_BALANCE'}, 400
     
-    start_time = time.time()
-    max_attempts = 10
-    attempts = 0
-    checker = False
-
-    while attempts < max_attempts and (time.time() - start_time) < 10:
-        result = get_phone_number_id(server, code, country, price, call.message, msg, call_data, operate)
-        if result['status'] == 'success':
-            checker = True
-            break
-        
-        progress = attempts / max_attempts
-        progress_bar = update_progress(progress)
-        attempts += 1
-        keyboard = InlineKeyboardMarkup()
-        keyboard.row(InlineKeyboardButton(f"{bar.get('loading')[attempts]} Aᴜᴛᴏ Cʜᴇᴄᴋɪɴɢ [Aᴛᴛᴇᴍᴘᴛ ({attempts})]", callback_data=f'{call.data}'))
-
+    if server in ["1", "2", "3"]:
         try:
-            bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"{bar.get('time')[attempts]} <b>Wᴇ Tʀʏɪɴɢ Tᴏ Gᴇᴛ Nᴜᴍʙᴇʀs!</b>\n\n<code>{progress_bar}</code>\n\n<b>{bar.get('search')[attempts]} Bᴜʏɪɴɢ Iɴ Pʀᴏɢʀᴇss</b>", parse_mode='html', reply_markup=keyboard)
-        except Exception as e:
-            print(e)
-            pass
-
-    if attempts == max_attempts:
-        keyboard = InlineKeyboardMarkup()
-        keyboard.row(InlineKeyboardButton("🐼 Eɴᴀʙʟᴇ Aᴜᴛᴏ Cʜᴇᴄᴋ Aɢᴀɪɴ [ Aᴛᴛᴇᴍᴘᴛ ]", callback_data=f'{call.data}'))
-        bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"""👨🏻‍💻 <b>Wᴇ'ʀᴇ Sᴏʀʀʏ! Aᴛ Tʜɪs Mᴏᴍᴇɴᴛ!</b>
-
-<i>✘ Tʜᴇʀᴇ Aʀᴇ Nᴏ Nᴇᴡ Nᴜᴍʙᴇʀs Aᴠᴀɪʟᴀʙʟᴇ. Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.</i>""", parse_mode='html', reply_markup=keyboard)
-
-    if checker:
-        print('done')
-
-    return
-
-
-
-
-
-
-#Open User History
-@bot.callback_query_handler(func=lambda call: call.data.startswith('USER:SUPPORT'))
-def callback_inline(call):
-    parts = call.data.split()
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton("🛒 Oʀᴅᴇʀ Hɪsᴛᴏʀʏ", switch_inline_query_current_chat=''),
-                 InlineKeyboardButton("💰 Dᴇᴘᴏsɪᴛ Hɪsᴛᴏʀʏ", switch_inline_query_current_chat=''))
-    keyboard.row(InlineKeyboardButton("🔙 Bᴀᴄᴋ Tᴏ Pʀᴏғɪʟᴇ Pᴀɢᴇ [ Usᴇʀ-Pʀᴏғɪʟᴇ ] ", callback_data='MAIN:MENU'))
-    purchase = 1
-    caption = f"""<b>⁉️ Fʟᴀsʜ Hᴇʟᴘ Gᴜɪᴅᴇ</b> <b>[ </b><code>Hᴏᴡ ᴛᴏ Usᴇ</code><b> ]</b>
-
-<b>𝟷.</b> <b>Sᴇʟᴇᴄᴛ Tʜᴇ Sᴇʀᴠɪᴄᴇ ❯</b>
-<code>Cʜᴏᴏsᴇ Tʜᴇ Sᴇʀᴠɪᴄᴇ Yᴏᴜ Wɪsʜ Tᴏ Pᴜʀᴄʜᴀsᴇ.</code>
-<b>𝟸.</b> <b>Cʜᴏᴏsᴇ Tʜᴇ Sᴇʀᴠᴇʀ ❯</b>
-<code>Sᴇʟᴇᴄᴛ Tʜᴇ Sᴇʀᴠᴇʀ Fᴏʀ Tʜᴇ Cʜᴏsᴇɴ Sᴇʀᴠɪᴄᴇ.</code>
-<b>𝟹.</b> <b>Pɪᴄᴋ Tʜᴇ Cᴏᴜɴᴛʀʏ ❯</b>
-<code>Sᴘᴇᴄɪғʏ Tʜᴇ Cᴏᴜɴᴛʀʏ Fᴏʀ Tʜᴇ Sᴇʀᴠɪᴄᴇ.</code>
-<b>𝟺.</b> <b>Cᴏɴғɪʀᴍ Yᴏᴜʀ Oʀᴅᴇʀ ❯</b>
-<code>Rᴇᴠɪᴇᴡ Aɴᴅ Cᴏɴғɪʀᴍ Yᴏᴜʀ Oʀᴅᴇʀ Dᴇᴛᴀɪʟs.</code>
-<b>𝟻.</b> <b>Rᴇᴄᴇɪᴠᴇ Yᴏᴜʀ Nᴜᴍʙᴇʀ ❯</b>
-<code>Yᴏᴜ Wɪʟʟ Rᴇᴄᴇɪᴠᴇ A Nᴜᴍʙᴇʀ, Vᴀʟɪᴅ Fᴏʀ 20 Mɪɴᴜᴛᴇs.</code>
-
-<b>📌 Nᴇᴇᴅ Assɪsᴛᴀɴᴄᴇ.!?</b>  
-<i>Fᴇᴇʟ Fʀᴇᴇ Tᴏ Cᴏɴᴛᴀᴄᴛ Us Fᴏʀ Aɴʏ Hᴇʟᴘ Oʀ Sᴜᴘᴘᴏʀᴛ...</i>"""
-    try:
-        bot.edit_message_media(media=InputMediaPhoto(media='https://i.postimg.cc/9QH9VNky/20240628-203445.jpg', caption=caption, parse_mode='HTML'),chat_id=chat_id,message_id=message_id,reply_markup=keyboard)
-    except Exception as e:
-        return
-    return
-        
-
-#Open User History
-@bot.callback_query_handler(func=lambda call: call.data.startswith('USER:HISTORY'))
-def user_history(call):
-    parts = call.data.split()
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton("🛒 Oʀᴅᴇʀ Hɪsᴛᴏʀʏ", switch_inline_query_current_chat=''),
-                 InlineKeyboardButton("💰 Dᴇᴘᴏsɪᴛ Hɪsᴛᴏʀʏ", switch_inline_query_current_chat=''))
-    keyboard.row(InlineKeyboardButton("🔙 Bᴀᴄᴋ Tᴏ Pʀᴏғɪʟᴇ Pᴀɢᴇ [ Usᴇʀ-Pʀᴏғɪʟᴇ ] ", callback_data='USER:PROFILE'))
-
-    user = get_user(chat_id)
-    history = get_history(user, 'OrderWeekDetails')
-    print(history)
-    number = history['total_orders']
-    amount = history['total_order_amount']
-    deposit = history['total_deposit_amount']
-    caption = f"""🔥 <b>Fʟᴀsʜ Tʀᴀɴsᴀᴄᴛɪᴏɴ Hɪsᴛᴏʀʏ 》</b>
-
-🔍 <b>Hᴇʀᴇ Yᴏᴜ Cᴀɴ Vɪᴇᴡ Aʟʟ Yᴏᴜʀ Pᴀsᴛ Tʀᴀɴsᴀᴄᴛɪᴏɴs.</b>
-
-<b>📅 Tʜɪs Wᴇᴇᴋ ❯</b>
-💰 <b>Pᴜʀᴄʜᴀsᴇs  »</b>  <code>{number}</code> <code>Nᴜᴍʙᴇʀ{'s' if number > 1 else ''}</code>
-📊 <b>Sᴘᴇɴᴅ  »</b>  <code>{amount:.2f}</code> 💎  〚$ <code>0.00</code>〛
-📈 <b>Dᴇᴘᴏsɪᴛs  »</b>  <code>{deposit:.2f}</code> 💎  〚$ <code>0.00</code>〛
-
-🏛️ <b>Yᴏᴜ Cᴀɴ Sᴇᴀʀᴄʜ Yᴏᴜʀ Tʀᴀɴsᴀᴄᴛɪᴏɴs Bʏ Dᴀᴛᴇ Aɴᴅ Tʏᴘᴇ. Tʜɪs Wɪʟʟ Hᴇʟᴘ Yᴏᴜ Eᴀsɪʟʏ Aɴᴀʟʏᴢᴇ Yᴏᴜʀ Fᴜᴛᴜʀᴇ Fɪɴᴀɴᴄᴇs..</b>."""
-    try:
-        bot.edit_message_media(media=InputMediaPhoto(media='https://i.postimg.cc/HLWC80bf/20240628-092309.jpg', caption=caption, parse_mode='HTML'),chat_id=chat_id,message_id=message_id,reply_markup=keyboard)
-    except Exception as e:
-        print(e)
-        return
-    return
-
-
-#Open User Profile
-@bot.callback_query_handler(func=lambda call: call.data.startswith('USER:DEPOSIT:QR'))
-def callback_inline(call):
-    parts = call.data.split()
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton("✅ Cʜᴇᴄᴋ Pᴀʏᴍᴇɴᴛ", callback_data='USER:DEPO SIT'),
-                 InlineKeyboardButton("ⓘ Hᴇʟᴘ & Sᴜᴘᴘᴏʀᴛ", callback_data="USER:HISTO RY"))
-    keyboard.row(InlineKeyboardButton("« Bᴀᴄᴋ Tᴏ Dᴇᴘᴏsɪᴛ Pᴀɢᴇ [ Dᴇᴘᴏsɪᴛ-Mᴇɴᴜ ]", callback_data='USER:DEPOSIT'))
-    
-    caption = f"""<b>🔥 Yᴏᴜʀ Fʟᴀsʜ Qʀ-Cᴏᴅᴇ 》</b>
-
-💰 <b>Mɪɴ Aᴍᴏᴜɴᴛ  »</b>  <code>₹⩇⩇</code>   <code>〚</code><code>⩇⩇💎</code><code>〛</code>
-💳 <b>Oʀᴅᴇʀ Iᴅ  »</b>  [ <code>⩇⩇⩇⩇⩇⩇⩇⩇⩇⩇⩇⩇</code> ]
-⏳ <b>Pᴀʏ Uɴᴅᴇʀ  »</b>  <code>⩇⩇:⩇⩇</code> <code>Mɪɴᴜᴛᴇs</code>
-
-📌 <b>Sᴄᴀɴ Tʜɪs Qʀ Aɴᴅ Pᴀʏ Fʀᴏᴍ Aɴʏ Pᴀʏᴍᴇɴᴛ Aᴘᴘ.</b>.."""
-    try:
-        bot.edit_message_media(
-        media=InputMediaVideo(media=f'https://t.me/imagesvideogif/10', caption=caption, parse_mode='HTML'),
-        chat_id=chat_id,
-        message_id=message_id,
-        reply_markup=keyboard
-    )
-    except Exception as e:
-        return
-    user = get_user(chat_id)
-    current_deposit_address = user['current_deposit_address']['UPI']
-    deposit = user['deposit']
-    details = deposit.get(current_deposit_address,None)
-    order_id = int(str(int(f"{str(str(time.time())[7:14]).replace('.', '')}{str(chat_id)[:5]}"))[::-1])
-    if current_deposit_address == "NONE":
-        details = {"order_id":f"{order_id}", "user_id": f"{chat_id}","server":"UPI","time":time.time()}
-        add_deposit(DepositFile, details)
-        update_balance(chat_id, 'create', order_id,'UPI')
-    elif time.time() < details['time']+1800:
-        order_id = current_deposit_address
-
-    else:
-        details = {"order_id":f"{order_id}", "user_id": f"{chat_id}","server":"UPI","time":time.time()}
-        add_deposit(DepositFile, details)
-        update_balance(chat_id, 'create', order_id,'UPI')
-        
-    caption = f"""<b>🔥 Yᴏᴜʀ Fʟᴀsʜ Qʀ-Cᴏᴅᴇ 》</b>
-
-💰 <b>Mɪɴ Aᴍᴏᴜɴᴛ  »</b>  <code>₹1⩇</code>   <code>〚</code><code>1⩇💎</code><code>〛</code>
-💳 <b>Oʀᴅᴇʀ Iᴅ  »</b>  [ <code>{order_id}</code> ]
-⏳ <b>Pᴀʏ Uɴᴅᴇʀ  »</b>  <code>{convertTime(details['time']+1800)}</code>
-
-📌 <b>Sᴄᴀɴ Tʜɪs Qʀ Aɴᴅ Pᴀʏ Fʀᴏᴍ Aɴʏ Pᴀʏᴍᴇɴᴛ Aᴘᴘ.</b>.."""
-    image = qr_code('qr_code.jpg', order_id, 380, (1470, 550), 20)
-    try:
-        bot.edit_message_media(media=InputMediaPhoto(media=image, caption=caption, parse_mode='HTML'),chat_id=chat_id,message_id=message_id,reply_markup=keyboard)
-    except Exception as e:
-        return
-    
-    return
-
-
-
-
-#Buy Checking List 2
-def get_country_server_2(service: str,country_flags, data,comissionPurchase) -> Union[bool, tuple]:
-    try:
-        if data is None:
-            return None, None #ValueError("Data is None, cannot proceed with get_country_server_2")
-        
-        if not data.get('status', True):
-            return None, None
-        
-        countries = data.get(service, {})
-        virtual_data = sorted(
-            [(cn, vi['cost'], vi['count']) for cn, ci in countries.items() for vk, vi in ci.items() if 'virtual' in vk],
-            key=lambda x: (x[1], -x[2])
-        )
-        
-        top_3_country_names = [country[0] for country in virtual_data[:3]]
-        more_countries = len(virtual_data) > 3
-        displayed_countries = top_3_country_names if not more_countries else top_3_country_names + [" ..."]
-        lowest_price = virtual_data[0][1] if virtual_data else None
-        top_3_country_emojis = [country_flags.get(name, name) for name in displayed_countries]
-        
-        result_str = "[" + ",".join(top_3_country_emojis) + "]"
-        return result_str, f"{lowest_price * comissionPurchase:.2f}"
-    
-    except (RequestException, ValueError, KeyError) as e:
-        print(f"Error fetching data: {e}")
-        return None, None
-
-#Buy Checking List 3 or 1
-def get_country_server_1or3(service,country_flags, service_data,comissionPurchase,serVer):
-    if not service_data:
-        return None, None
-    if service_data == "null":
-        return None, None
-    prices = [(country_code, float(next(iter(services[service]))), int(next(iter(services[service].values())))) 
-              for country_code, services in service_data.items() if service in services]
-    if not prices:
-        return None, None
-    sorted_prices = sorted(prices, key=lambda x: (x[1], x[2]))
-    top_3_country_codes = [price[0] for price in sorted_prices[:3]]
-    top_1_lowest_price = sorted_prices[0][1] if sorted_prices else None
-    top_3_country_flags = [country_flags.get(code, code) for code in top_3_country_codes]
-    if len(top_3_country_flags) == 3:
-        top_3_country_flags = top_3_country_flags + [' ...']
-
-    if serVer == "3":
-        top_1_lowest_price = top_1_lowest_price * 86.9565
-    return "[" + ",".join(top_3_country_flags) + "]", f"{top_1_lowest_price * comissionPurchase:.2f}"
-
-    
-#Buy Checking List 4
-def get_country_server_4(service, flags, data, comissionPurchase,top_n=3):
-    return None, None
-    if not data:
-        return None, None
-    costs = [(id, details[service]['cost']) for id, details in data.items()]
-    if not costs:
-        return None, None
-    sorted_costs = sorted(costs, key=lambda x: x[1])
-    top_n_lowest = sorted_costs[:top_n]
-    lowest_cost = sorted_costs[0]
-    top_n_lowest_with_flags = [flags[id] for id, cost in top_n_lowest]
-    lowest_cost_value = lowest_cost[1]
-    if len(sorted_costs) > top_n:
-        top_n_lowest_with_flags.append('...')
-    top_n_lowest_with_flags_str = ", ".join(top_n_lowest_with_flags)
-    top_n_lowest_with_flags_str = f"[{top_n_lowest_with_flags_str}]"
-    return top_n_lowest_with_flags_str, f"{lowest_cost_value * comissionPurchase:.2f}"
-
-#edit menu
-@bot.callback_query_handler(func=lambda call: call.data.startswith('MAIN:MENU'))
-def edit_welcome(call):
-    startHandle(call.message,'edit')
-    return
-
-#open menu
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    startHandle(message,'start')
-    return 
-
-
-#Open User Profile
-@bot.callback_query_handler(func=lambda call: call.data.startswith('USER:PROFILE'))
-def callback_inline(call):
-    parts = call.data.split()
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton("💰 Dᴇᴘᴏsɪᴛ", callback_data='USER:DEPOSIT'),
-                 InlineKeyboardButton("📑 Hɪsᴛᴏʀʏ", callback_data="USER:HISTORY"))
-    keyboard.row(InlineKeyboardButton("🔙 Bᴀᴄᴋ Tᴏ Hᴏᴍᴇ Pᴀɢᴇ [ Mᴀɪɴ-Mᴇɴᴜ ]", callback_data='MAIN:MENU'))
-    
-    caption = """<b>🔥 Yᴏᴜʀ Fʟᴀsʜ-Wᴀʟʟᴇᴛ 》</b>
-
-💰 <b>Yᴏᴜʀ Bᴀʟᴀɴᴄᴇ  »</b>  <code>0</code> 💎  <code>〚</code><b>$</b> <code>0.00</code><code>〛</code>
-📊 <b>Tᴏᴛᴀʟ Sᴘᴇɴᴅ  »</b>  <code>0</code> 💎  <code>〚</code><b>$</b> <code>0.00</code><code>〛</code>
-📈 <b>Tᴏᴛᴀʟ Dᴇᴘᴏsɪᴛ  »</b>  <code>0</code> 💎  <code>〚</code><b>$</b> <code>0.00</code><code>〛</code>
-
-📌 <b>Yᴏᴜ Cᴀɴ Rᴇᴄʜᴀʀɢᴇ Yᴏᴜʀ Wᴀʟʟᴇᴛ Fʀᴏᴍ Hᴇʀᴇ.</b>.."""
-    try:
-        bot.edit_message_media(
-        media=InputMediaVideo(media=f'https://t.me/imagesvideogif/10', caption=caption, parse_mode='HTML'),
-        chat_id=chat_id,
-        message_id=message_id,
-        reply_markup=keyboard
-    )
-    except Exception as e:
-        return
-    landscape_url = 'ProfileImage.png'
-    text_position = (247, 430)
-    text_size = 40
-    text_font_path = 'NewtonHowardFont.ttf'
-    user_image = get_telegram_profile_photo(BotToken, chat_id)
-    create_and_send_image(call.message,landscape_url, user_image, text_position, text_size, text_font_path, BotToken, chat_id,message_id)
-    return
-
-
-#cancel order 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('CHANGE:STATUS'))
-def change_order_status(call):
-    if call.data.startswith("CHANGE:STATUS:CANCEL"):
-        keyboard = InlineKeyboardMarkup()
-        buttonText = call.message.reply_markup.keyboard[0][1].callback_data
-        keyboard.row(InlineKeyboardButton("↻ Bᴜʏ Nᴇᴡ Nᴜᴍʙᴇʀ Aɢᴀɪɴ [ Bᴜʏ Sᴇʀᴠɪᴄᴇ ]",callback_data=buttonText))
-        
-        parts = call.data.split()
-        user_id = parts[1] if len(parts) > 1 else None
-        order_id = parts[2] if len(parts) > 2 else None
-        if order_id and user_id:
-            user = get_user(user_id)
-            try:
-                order_data = user['orders'][order_id]
-                number = order_data.get('number')
-                sms = order_data.get('sms')
-                status = order_data.get('status')
-                amount = order_data.get('amount')
-                server = order_data.get('server')
-            except KeyError as e:
-                print(e)
-                return
-            if status == 'REFUNDED':
-                try:
-                    bot.answer_callback_query(call.id, f"🔎 Tʜᴇ Nᴜᴍʙᴇʀ Is Cᴀɴᴄᴇʟʟᴇᴅ Aʟʀᴇᴀᴅʏ Aɴᴅ Rᴇғᴜɴᴅ Wᴀs Sᴜᴄᴄᴇssғᴜʟʟʏ Iɴɪᴛɪᴀᴛᴇᴅ...",show_alert=True)
-                except Exception as e:
-                    pass
-                return
+            response = requests.get(url)
+            response_text = response.text
+            if response_text.startswith('ACCESS_NUMBER'):
+                match = re.match(r'ACCESS_NUMBER:(\d+):(\d+)', response_text)
+                if match:
+                    id_number = match.group(1)
+                    phone_number = f"+{match.group(2)}"
+                    new_order = {
+                        "server_id": server,
+                        "api_key": api_key,
+                        "order_id": id_number,
+                        "user_id": user_id,
+                        "time": time.time(),
+                        "amount": amount,
+                        "status": "pending",
+                        "number": phone_number,
+                        "type": "api"
+                    }
+                    add_order('OrderFile', new_order)
+                    data = manage_order(user_id, id_number, 'create', amount=price, server=server, sms='WAITING', number=phone_number, message_id='api', buttonText=buttonText)
+                    return {
+                        'status': "success",
+                        'order_id': f'{id_number}',
+                        "number": f'{phone_number}',
+                        'url': f'{url}'
+                    }, 200
+            elif response_text.startswith('NO_BALANCE'):
+                return {'status': 'error', 'message': 'No balance remains to buy this service','short_code': 'NO_BALANCE'}, 400
+            elif response_text.startswith('NO_NUMBERS'):
+                return {'status': 'error', 'message': 'Currently no number in stock','short_code': 'NO_NUMBERS'}, 400
+            elif response_text.startswith('BAD_ACTION'):
+                return {'status': 'error', 'message': 'This function can not approve currently','short_code': 'BAD_ACTION'}, 400
             else:
-                msg = bot.reply_to(call.message, text="⏳ <b>Cᴀɴᴄᴇʟʟᴀᴛɪᴏɴ Iɴ Pʀᴏɢʀᴇss..</b>.", parse_mode='html').message_id
-            
-            request = fetch_url(server,'CANCEL',order_id)
+                return {'status': 'error', 'message': f'Unknown error: {response_text}','short_code': 'BAD_ACTION'}, 400
 
-            
-            if request['status'] == 'success' and request['message'] == 'ACTIVATION_CANCELED':
-                bot.edit_message_text(chat_id=user_id, message_id=msg, text="🔎 <b>Rᴇǫᴜᴇsᴛɪɴɢ Sᴇʀᴠᴇʀ Fᴏʀ Oʀᴅᴇʀ..</b>.", parse_mode='html')
-                
-                checker = manage_order(user_id, order_id, 'cancel',amount)
-                if checker['status'] == 'success' and checker['message'] == 'ORDER_CANCELED:REFUNDED':
-                    bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"<blockquote><b>⚡Oʀᴅᴇʀ Hᴀs Bᴇᴇɴ Cᴀɴᴄᴇʟʟᴇᴅ Sᴜᴄᴄᴇssғᴜʟʟʏ, Aɴᴅ Tʜᴇ Rᴇғᴜɴᴅ Hᴀs Bᴇᴇɴ Cʀᴇᴅɪᴛᴇᴅ Tᴏ Yᴏᴜʀ Aᴄᴄᴏᴜɴᴛ!</b></blockquote>", parse_mode='html')
-                    text = format_message(call.message.text,'Cᴀɴᴄᴇʟʟᴇᴅ')
-                    bot.edit_message_text(chat_id=user_id, message_id=call.message.message_id, text=text, parse_mode='html',reply_markup=keyboard)
-                    remove_order(OrderFile,order_id)
-                    return
-            
-            
-            if request['message'] == 'ALLREDY_CANCELED':
-                bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"🔎 <b>Tʜᴇ Nᴜᴍʙᴇʀ Is Cᴀɴᴄᴇʟʟᴇᴅ Aʟʀᴇᴀᴅʏ Aɴᴅ Rᴇғᴜɴᴅ Wᴀs Sᴜᴄᴄᴇssғᴜʟʟʏ Iɴɪᴛɪᴀᴛᴇᴅ..</b>.", parse_mode='html')
-                return
+        except requests.RequestException as e:
+            return {'status': 'error', 'message': str(e),'short_code': 'BAD_ACTION'}, 400
 
-            
-            if request['message'] != 'ACTIVATION_CANCELED':
-                bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"🔎 <b>{request['message']}..</b>.", parse_mode='html')
-                
-            return
+def apply_tax(price, server):
+    multiplier = 86.9565 if server == '3' else 1
+    adjusted_price = float(price) * multiplier
+    commission_purchase = comissionPurchase
+    final_price = adjusted_price * (commission_purchase)
+    return round(final_price, 2)
 
+def normalize_data(server_data, server):
+    normalized = {}
+    for country, services in server_data.items():
+        normalized[country] = {}
+        for service, details in services.items():
+            if isinstance(details, dict):
+                if "cost" in details and "count" in details:
+                    cost_with_tax = apply_tax(details["cost"], server)
+                    normalized[country][service] = {str(cost_with_tax): str(details["count"])}
+                else:
+                    for cost, count in details.items():
+                        cost_with_tax = apply_tax(float(cost), server)
+                        normalized[country][service] = {str(cost_with_tax): str(count)}
+    return normalized
 
+def get_api_prices(SERVER, COUNTRY=None, SERVICE=None):
+    if not SERVER:
+        return {"status": "error", "message": "Server Not Found", "short_code": "SERVER_NOT_FOUND"}
 
-#Open User Deposit 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('USER:DEPOSIT'))
-def callback_inline(call):
-    parts = call.data.split()
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    keyboard = InlineKeyboardMarkup()
-    Trx = InlineKeyboardButton("🪙 Tʀx",callback_data=f"/Trx")
-    Redeem = InlineKeyboardButton(
-    "🏆 Rᴇᴅᴇᴇᴍ",callback_data=f"/Redeem")
-    Inr = InlineKeyboardButton("💰 Iɴʀ",callback_data=f"USER:DEPOSIT:QR")
-    keyboard.row(Trx, Redeem, Inr)
-    keyboard.row(InlineKeyboardButton("🔙 Bᴀᴄᴋ Tᴏ Hᴏᴍᴇ Pᴀɢᴇ [ Mᴀɪɴ-Mᴇɴᴜ ]", callback_data='MAIN:MENU'))
-    
-    caption = """<b>🔥 Fʟᴀsʜ Dᴇᴘᴏsɪᴛ Pᴀɢᴇ 》</b>
-<b>Hᴇʀᴇ Yᴏᴜ Cᴀɴ Aᴅᴅ Fᴜɴᴅs Tᴏ Yᴏᴜʀ Wᴀʟʟᴇᴛ!</b>
-
-<code>❒</code> <code>1</code> <b>Iɴʀ</b>   <b>»</b> <code>1</code> 💎 <b>||</b> <code>1</code> Tʀx  <b>»</b> <code>10</code> 💎
-
-➕ <b>Sᴇʟᴇᴄᴛ Dᴇᴘᴏsɪᴛ Mᴇᴛʜᴏᴅ, Aʟʟ Dᴇᴘᴏsɪᴛ Aᴍᴏᴜɴᴛ Wɪʟʟ Bᴇ Cᴏɴᴠᴇʀᴛᴇᴅ Tᴏ Pᴏɪɴᴛ</b><code>(</code><code>💎</code><code>)</code>"""
-    try:
-        bot.edit_message_media(
-        media=InputMediaPhoto(media='https://i.postimg.cc/hGZ2G2v5/IMG-20240620-025944-733.jpg', caption=caption, parse_mode='HTML'),
-        chat_id=chat_id,
-        message_id=message_id,
-        reply_markup=keyboard
-    )
-    except Exception as e:
-        print(e)
-        return
-    return
-
-
-
-# Callback query handler
-@bot.callback_query_handler(func=lambda call: call.data.startswith('next_') or call.data.startswith('prev_') or call.data.startswith('buy_'))
-def callback_query(call):
-    if call.data.startswith("next_") or call.data.startswith("prev_"):
-        parts = call.data.split()
-        server = parts[1] if len(parts) > 1 else None
-        service = parts[2] if len(parts) > 2 else None
-        name = parts[3] if len(parts) > 3 else service
-        buycommand = parts[4] if len(parts) > 4 else None
-        
-        page = int(call.data.split('_')[1].split()[0])
-        SerName = server.replace('1', '𝟷').replace('2', '𝟸').replace('3', '𝟹').replace('4', '𝟺')
-        request = Get_Ser_Price_AD(server, service)
-        text = f"<b>⦿ Sᴇʀᴠɪᴄᴇ ❯</b> {name} <b>〔{SerName}〕 \n\n↓ Cʜᴏᴏsᴇ Cᴏᴜɴᴛʀʏ Bᴇʟᴏᴡ</b>"
-        try:
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                              text=text, reply_markup=generate_markup(page, request,server, service, name,buycommand),parse_mode='html')
-        except Exception as e:
-            try:
-                bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,text=text,reply_markup=generate_markup(page+1, request,server, service, name,buycommand),parse_mode='html')
-            except Exception as e:
-                try:
-                    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,text=text,reply_markup=generate_markup(page-1, request,server, service, name,buycommand),parse_mode='html')
-                except Exception as e:
-                    print(e)
-                    return
+    if not COUNTRY and not SERVICE:
+        details = ''
+    elif not COUNTRY:
+        details = f'&service={SERVICE}'
+    elif not SERVICE:
+        details = f'&country={COUNTRY}'
     else:
-        user_id = call.message.chat.id
-        msg = bot.send_message(user_id,f"⏳ <b>Oʀᴅᴇʀɪɴɢ Iɴ Pʀᴏɢʀᴇss..</b>.", parse_mode='html'). message_id
-        parts = call.data.split()
-        server = call.data.split('_')[1].split()[0]
-        SerName = server.replace('1', '𝟷').replace('2', '𝟸').replace('3', '𝟹').replace('4', '𝟺')
-        buycommand = parts[1] if len(parts) > 1 else None
-        country = parts[2] if len(parts) > 2 else None
-        price = parts[3] if len(parts) > 3 else None
-        code = parts[4] if len(parts) > 4 else None
-        service = parts[5] if len(parts) > 5 else code
-        flag = parts[6] if len(parts) > 6 else None
-        operate = parts[7] if len(parts) > 7 else None
-        if service == '1':
-            service = str(f"{code}").capitalize()
-        checking = update_balance(user_id, 'checking', float(price))
-        bot.edit_message_text(chat_id=user_id, message_id=msg, text="🔎 <b>Rᴇǫᴜᴇsᴛɪɴɢ Sᴇʀᴠᴇʀ Fᴏʀ Oʀᴅᴇʀ..</b>.", parse_mode='html')
-        if checking['status'] == 'success':
-            checker = update_balance(user_id, 'purchase',price)
+        details = f'&service={SERVICE}&country={COUNTRY}'
 
-            if checker['status'] == 'error':
-                if checker['message']:
-                    try:
-                        bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"⏳ <b>Yᴏᴜ Nᴇᴇᴅ Tᴏ Wᴀɪᴛ </b><code>{checker.get('message', '1')}</code><b> Sᴇᴄᴏɴᴅs Fᴏʀ Pʀᴏᴄᴇssɪɴɢ Yᴏᴜʀ Oʀᴅᴇʀ..</b>.", parse_mode='html')
-                    except Exception as e:
-                        print(e)
-                        return
+    countryFlags = load_data('countriesFlag.json', 'r')
+    service_codes = countryFlags.get('service', {})
+    country_flags = countryFlags.get('2', {})
+    country_codes = countryFlags.get('6', {})
+    output = {}
+
+    try:
+        if SERVER == '1':
+            server_data = requests.get(f'https://flashsms.in/BotFile/serviceList.php?action=getPrices{details}')
+            if server_data.status_code != 200:
+                return {"status": "error", "message": "Failed to retrieve data from server", "short_code": "SERVER_REQUEST_ERROR"}
+            server_data = server_data.json()
+            if not isinstance(server_data, dict):
+                if not COUNTRY and SERVICE:
+                    COUNTRY = None
+                    data = requests.get(f'https://flashsms.in/BotFile/serviceList.php?action=getPrices& service={SERVICE}').json()
+                if not SERVICE and COUNTRY:
+                    SERVICE = None
+                    data = requests.get(f'https://flashsms.in/BotFile/serviceList.php?action=getPrices&country={COUNTRY}').json()
+                else:
+                    SERVICE = None
+                    COUNTRY = None
+                    data = requests.get(f'https://flashsms.in/BotFile/serviceList.php?action=getPrices').json()
+                server_data = data
+
+        elif SERVER == '2':
+            api_key = fivesim
+            data = requests.get(f'http://api1.5sim.net/stubs/handler_api.php?api_key={api_key}&action=getPrices{details}').json()
+            if data.get('status','Not Found') != 'Not Found':
+                msg = str(data.get('msg'))
+                if COUNTRY and str('country is incorrect') not in msg:
+                    COUNTRY = None
+                    data = requests.get(f'http://api1.5sim.net/stubs/handler_api.php?api_key={api_key}&action=getPrices&country={COUNTRY}').json()
+                elif SERVICE and str('service is incorrect') not in msg:
+                    SERVICE = None
+                    data = requests.get(f'http://api1.5sim.net/stubs/handler_api.php?api_key={api_key}&action=getPrices&service={SERVICE}').json()
+                else:
+                    COUNTRY = None
+                    SERVICE = None
+                    data = requests.get(f'http://api1.5sim.net/stubs/handler_api.php?api_key={api_key}&action=getPrices').json()
+            if not isinstance(data, dict):
+                return {"status": "error", "message": 'wrong parameters', "short_code": "SERVER_WRONG_PARAMETERS"}
+            for country, services in data.items():
+                if SERVICE and not COUNTRY:
+                    service_code = service_codes.get(country.lower(), country)
+                else:
+                    country_flag = country_flags.get(country,country)
+                    country_code = country_codes.get(country_flag,country)
+                for service, products in services.items():
+                    if SERVICE and not COUNTRY:
+                        country_flag = country_flags.get(service,service)
+                        country_code = country_codes.get(country_flag,service)
+                    else:
+                        service_code = service_codes.get(service.lower(), service)
                     
-                    return
-        
-            result = get_phone_number_id(server, code, country, price, call.message,msg,call.data,operate)
-        elif checking['status'] == 'error':
-            keyboard = InlineKeyboardMarkup()
-            keyboard.row(InlineKeyboardButton("🔥 Dᴇᴘᴏsɪᴛ Nᴏᴡ Fᴏʀ Pᴜʀᴄʜᴀsᴇ", callback_data='USER:DEPOSIT'))
-            bot.delete_message(user_id, msg)
-            bot.send_photo(photo='https://i.postimg.cc/wM4r0m9V/IMG-20240623-223050-843.jpg',chat_id=user_id, caption=f"""<b>🏛️ Iɴsᴜғғɪᴄɪᴇɴᴛ Bᴀʟᴀɴᴄᴇ!</b>
+                    lowest_cost = float('inf')
+                    lowest_cost_virtual = None
+                    for virtual_id, info in products.items():
+                        cost = info.get('cost')
+                        count = info.get('count') or info.get('quantity')
+                        if cost < lowest_cost:
+                            lowest_cost = cost
+                            lowest_cost_virtual = count
+                    if lowest_cost_virtual is not None:
+                        if country_code not in output:
+                            output[country_code] = {}
+                        if service_code not in output[country_code]:
+                            output[country_code][service_code] = {}
+                        output[country_code][service_code][str(lowest_cost)] = str(lowest_cost_virtual)
+            server_data = output
 
-💰 <b>Yᴏᴜʀ Bᴀʟᴀɴᴄᴇ ❯</b> <code>{checking['balance']}</code> 💎
-🫴🏻 <b>Rᴇǫᴜɪʀᴇᴅ Bᴀʟᴀɴᴄᴇ ❯</b> <code>{price}</code> 💎
+        elif SERVER == '3':
+            api_key = smshub
+            server3 = requests.get(f'https://smshub.org/stubs/handler_api.php?api_key={api_key}&action=getPrices&currency=643{details}').json()
+            if not isinstance(server3, dict):
+                if not COUNTRY and SERVICE:
+                    COUNTRY = None
+                    data = requests.get(f'https://smshub.org/stubs/handler_api.php?api_key={api_key}&action=getPrices& service={SERVICE}').json()
+                if not SERVICE and COUNTRY:
+                    SERVICE = None
+                    data = requests.get(f'https://smshub.org/stubs/handler_api.php?api_key={api_key}&action=getPrices&country={COUNTRY}').json()
+                else:
+                    SERVICE = None
+                    COUNTRY = None
+                    data = requests.get(f'https://smshub.org/stubs/handler_api.php?api_key={api_key}&action=getPrices').json()
+                server_data = data
+            server3 = {key: value for key, value in server3.items() if value}
+            server_data = server3
 
-⚡ <b>Rᴇᴄʜᴀʀɢᴇ Yᴏᴜʀ Wᴀʟʟᴇᴛ Tᴏ Cᴏɴᴛɪɴᴜᴇ Pᴜʀᴄʜᴀsᴇ..</b>.""", reply_markup=keyboard, parse_mode='html')
-            return
+    except (requests.RequestException, ValueError) as e:
+        return {"status": "error", "message": str(e), "short_code": "SERVER_RESPONSE_ERROR"}
 
-        if result['status'] == 'error':
-            try:
-                keyboard = InlineKeyboardMarkup()
-                keyboard.row(InlineKeyboardButton("🐼 Eɴᴀʙʟᴇ Aᴜᴛᴏ Cʜᴇᴄᴋ [ Aᴜᴛᴏ-Aᴛᴛᴇᴍᴘᴛ ]", callback_data=f'$ {call.data}'))
-                bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"""<b>🌊 Nᴏ Nᴜᴍʙᴇʀs Aᴠᴀɪʟᴀʙʟᴇ</b>
-<code>Dᴜᴇ Tᴏ Hɪɢʜ Dᴇᴍᴀɴᴅ, Tʜᴇ Sᴇʀᴠɪᴄᴇ Is Uɴᴀᴠᴀɪʟᴀʙʟᴇ.</code>
-
-<b>🔎 Tʀʏ Aɢᴀɪɴ</b>
-<code>Cʟɪᴄᴋ Aᴜᴛᴏ Cʜᴇᴄᴋ Tᴏ Rᴇᴛʀʏ Pᴜʀᴄʜᴀsᴇ.</code>""",parse_mode='html',reply_markup=keyboard)
-                bot.answer_callback_query(call.id, f"✘ Nᴏ Nᴇᴡ Nᴜᴍʙᴇʀs Aᴠᴀɪʟᴀʙʟᴇ....")
-            except Exception as e:
-                print(e)
-                return
-        if result['status'] == 'success':
-            keyboard = InlineKeyboardMarkup()
-            keyboard.row(InlineKeyboardButton("✘ Cᴀɴᴄᴇʟ Oʀᴅᴇʀ", callback_data=f"CHANGE:STATUS:CANCEL {user_id} {result['id']}"),InlineKeyboardButton("↻ Bᴜʏ Aɢᴀɪɴ", callback_data=call.data))
-            text = f"""<blockquote><b>📦 {service} [</b> <code>{SerName}</code> <b>][</b> <code>{flag}</code> <b>][</b> 💎 <code>{price}</code> <b>]</b></blockquote>
-            
-<b>📞 Nᴜᴍʙᴇʀ ❯</b> {result['number']}
-            
-⏱<b> Nᴜᴍʙᴇʀ Is Vᴀʟɪᴅ Tɪʟʟ</b> {AfterMin(20)}"""
-            bot.edit_message_text(chat_id=user_id, message_id=msg, text=text, parse_mode='html',reply_markup=keyboard)
-            try:
-                bot.answer_callback_query(call.id, f"🛍️ Nᴜᴍʙᴇʀ Bᴜʏᴇᴅ Sᴜᴄᴄᴇssғᴜʟʟʏ...")
-            except Exception as e:
-                return
-            return
-
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('$'))
-def callback_inline(call):
-    user_id = call.message.chat.id
-    parts = call.data.split()
-    server = call.data.split('_')[1].split()[0]
-    SerName = server.replace('1', '𝟷').replace('2', '𝟸').replace('3', '𝟹').replace('4', '𝟺')
-    msg = call.message.message_id
-    call_data = call.data[10:]
-    buycommand = parts[2] if len(parts) > 2 else None
-    country = parts[3] if len(parts) > 3 else None
-    price = parts[4] if len(parts) > 4 else None
-    code = parts[5] if len(parts) > 5 else None
-    service = parts[6] if len(parts) > 6 else code
-    flag = parts[7] if len(parts) > 7 else None
-    operate = parts[8] if len(parts) > 8 else None
-    if service == '1':
-        service = str(f"{code}").capitalize()
-
-    thread = threading.Thread(target=handle_auto_check, args=(call, user_id, server, code, country, price, msg, call_data, operate))
-    thread.start()
+    normalized_data = normalize_data(server_data, SERVER)
+    return normalized_data
 
 
 
-#inline query 
-@bot.inline_handler(lambda query: not query.query.strip().startswith('#'))
-def query_apps(inline_query):
-    response = load_data('serviceCode.json','r')
-    checker = load_data('CheckerList.json','r')
-
-    app_list = {key: value.lower() if isinstance(value, str) else value[0].lower() for key, value in response.items()}
     
-    RESULTS_PER_PAGE = 25
     
-    try:
-        query = inline_query.query.strip().lower()
-        matches = []
+
+
+
+@app.route('/handler_api', methods=['GET', 'POST'])
+def handler_api():
+    listService = load_data('serviceCode.json', 'r')
+    checker = load_data('CheckerList.json', 'r')
+    responses = load_data('serviceForOne.json', 'r')
+    countryFlags = load_data('countriesFlag.json', 'r')
+
+    api_key = request.args.get('api_key') or request.form.get('api_key')
+    validate = validate_api_key(api_key)
+
+    user_id = '5716978793'
+    
+    if validate:
+        return jsonify(validate), 400
+
+    action = request.args.get('action') or request.form.get('action')
+    
+    if action == 'getSms':
+        sms = request.args.get('sms') or request.form.get('sms')
         
-        if query == '':
-            matches = sorted(app_list.items())
+        if sms:
+            response = requests.get(f"https://fastsms.su/stubs/handler_api.php?api_key={fastsms}&action=getOtp&sms={sms}")
+            
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    service_data = response_data[0].split(':') if ':' in response_data[0] else [response_data[0]]
+                    
+                    result = jsonify({
+                        'status': 'success',
+                        'service': service_data,
+                        'sms': response_data[1]
+                    }), 200
+                except Exception as e:
+                    result = jsonify({
+                'status': 'error',
+                'message': 'Service not found for this format'
+            }), 400
+            else:
+                result = jsonify({
+                'status': 'error',
+                'message': 'Service not found for this format'
+            }), 400
         else:
-            prefix_matches = [(key, value) for key, value in app_list.items() if key.lower().startswith(query)]
-            other_matches = [(key, value) for key, value in app_list.items() if query in key.lower() or difflib.SequenceMatcher(None, query, key.lower()).ratio() > 0.7]
-            
-            # Combine and sort prefix matches first
-            matches = sorted(prefix_matches) + sorted(other_matches)
+            result = jsonify({
+                'status': 'error',
+                'message': 'Missing required parameter: sms'
+            }), 400
         
-        # Filter out duplicates based on 'value' before pagination
-        seen_values = set()
-        unique_matches = []
-        for key, value in matches:
-            if value not in seen_values:
-                seen_values.add(value)
-                unique_matches.append((key, value))
-        
-        num_pages = -(-len(unique_matches) // RESULTS_PER_PAGE)
-        offset = int(inline_query.offset) if inline_query.offset else 0  # Ensure offset is not None
-        current_matches = unique_matches[offset * RESULTS_PER_PAGE: (offset + 1) * RESULTS_PER_PAGE]
-        
-        results = []
-        for idx, (key, value) in enumerate(current_matches, start=offset * RESULTS_PER_PAGE + 1):
-            result = InlineQueryResultArticle(
-                id=str(idx),
-                title=key.title(),
-                description=f'We Have “{value}” Numbers.',
-                thumbnail_url=f"https://fastsms.su/img/service/{value}.png" if value in checker else f"https://smsactivate.s3.eu-central-1.amazonaws.com/assets/ico/{value}0.webp",
-                input_message_content=InputTextMessageContent(f"/Buy_{value}")
-            )
-            results.append(result)
-        
-        next_offset = str(offset + 1) if offset + 1 < num_pages else ''
-        if not results:
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(text="📞 Cᴏɴᴛᴀᴄᴛ Cᴏᴜsᴛᴏᴍᴇʀ Exɪᴄᴜᴛɪᴠᴇ", url="FlashOtpOwner.t.me"))
-            results.append(InlineQueryResultArticle(id=str(1),title=f'“{inline_query.query}” Is Nᴏᴛ Fᴏᴜɴᴅ Iɴ Sᴇʀᴠɪᴄᴇs',description="Yᴏᴜ Cᴀɴ Cᴏɴᴛᴀᴄᴛ Sᴜᴘᴘᴏʀᴛ Tᴏ Aᴅᴅ Tʜᴇsᴇ Sᴇʀᴠɪᴄᴇs Oʀ Tʀʏ “AɴʏOᴛʜᴇʀ” Nᴜᴍʙᴇʀs",input_message_content=InputTextMessageContent(message_text="*🔥 Fᴏʀ Aᴅᴅɪɴɢ Aɴʏ Uɴʟɪsᴛᴇᴅ Sᴇʀᴠɪᴄᴇ*\n\n*Cᴏɴᴛᴀᴄᴛ Cᴏᴜsᴛᴏᴍᴇʀ Exɪᴄᴜᴛɪᴠᴇ*\n\n*——————— Oʀ ———————*\n\n👉 *Tʀʏ “Oᴛʜᴇʀ(/Buy_ot)“, Iᴛ Mɪɢʜᴛ Bᴇ Wᴏʀᴋ.* ",parse_mode="Markdown"),reply_markup=keyboard,thumbnail_url="https://i.postimg.cc/1zd93SYp/1000011596.png"))
-        bot.answer_inline_query(inline_query.id, results, next_offset=next_offset)
-        return
+        return result
     
-    except Exception as e:
-        #print(e)
-        return
+    elif action == 'getNumber':
+        service = request.args.get('service') or request.form.get('service') or None
+        country = request.args.get('country') or request.form.get('country') or None
+        server = request.args.get('server') or request.form.get('server') 
+        
+        if server in ['1','2','3']:
+            name = responses.get(service.replace(" ", "").lower(), service.replace(" ", "").lower())
+            if str(server) == str('1'):
+                code = service
+            elif str(server) == str('2'):
+                flag = countryFlags["3"].get(country,country)
+                country = countryFlags["5"].get(flag,country)
+                code = name
+            elif str(server) == str('3'):
+                if service:
+                    code = get_value(listService, code)
+                else:
+                    service = None
+            else:
+                return jsonify({'status': 'error', 'message': 'Missing required parameter: server'}), 400
+            response_data = Get_Ser_Price_AD(server, code, type='api', country=country)
+            result, status = get_api_number(user_id, service, country, server, f'{service}', name.capitalize(),code, response_data)
+            return jsonify(result), status
+        else:
+            return jsonify({'status': 'error', 'message': 'Missing required parameter: service',"short_code": "BAD_SERVICE"}), 400
 
-#orders
-@bot.inline_handler(lambda query: query.query.strip().startswith('#OʀᴅᴇʀIᴅ'))
-def query_smsList(inline_query):
-    try:
-        last = {1:'sᴛ',2:'ɴᴅ',3:'ʀᴅ',4:'ᴛʜ'}
-        order_id = inline_query.query.split(":")[1]
-        user_id = inline_query.from_user.id
+    elif action == 'getBalance':
         user = get_user(user_id)
-        order_data = user['orders'].get(order_id)
-        checker = load_data('CheckerList.json','r')
-        id = 0
-        if order_data:
-            results = []
-            for idx, item in enumerate(order_data['history'], start=1):
-                action_details = item['action'].split(':')
-                if 'SMS received' in action_details[0]:
-                    sms_code = action_details[1].strip()
-                    buttonText = order_data.get('buttonText')
-                    code = re.search(r'\b\w+\b', buttonText.split()[1]).group()
-                    price = order_data.get('amount')
-                    price = price if idx == 2 else 'Fʀᴇᴇ'
-                    name = re.search(r'\b\w+\b', buttonText.split()[5]).group()
-                    id += 1
-                    result = InlineQueryResultArticle(id=str(idx),title=f"{id}{last.get(id,'ᴛʜ')} Sᴍs Rᴇᴄɪᴇᴠᴇᴅ [{sms_code}]",description=f"💎 Pʀɪᴄᴇ ❯ {price}\n⏳ Rᴇᴄᴇɪᴠᴇᴅ Aᴛ {time_ago(item['datetime'])} Aɢᴏ...",thumbnail_url=f"https://fastsms.su/img/service/{code}.png" if code in checker else f"https://smsactivate.s3.eu-central-1.amazonaws.com/assets/ico/{code}0.webp",
-input_message_content=InputTextMessageContent(f'/Buy_{code}'))
-                    results.append(result)
+        current_balance = user['balance']
+        return jsonify({'status': 'success', 'message': 'Your balance fetched','short_code':'ACCESS_BALANCE','balance': f'{current_balance}'}), 200
 
-            summary_result = InlineQueryResultArticle(id='summary',title=f'🛍️ Oʀᴅᴇʀ Sᴍs Hɪsᴛᴏʀʏ [{name}]',description=f"⚡ Oʀᴅᴇʀ Bᴜʏᴇᴅ Aᴛ [{order_data['datetime']}]\n💬 Tᴏᴛᴀʟ Sᴍs Rᴇᴄɪᴇᴠᴇᴅ ❯ {id} Sᴍs'{'s' if id > 1 else ''}",input_message_content=InputTextMessageContent(f'/Buy_{code}'),thumbnail_url='https://i.postimg.cc/SsGCcXsn/IMG-20240627-195746-954.jpg')
-            results.insert(0, summary_result)
-            bot.answer_inline_query(inline_query.id, results, cache_time=1)
-    except Exception as e:
-        print(f"Error handling inline query: {e}")
-        return
+    elif action == 'getServices':
+        return jsonify(responses), 200
 
-
-
-
-def parse_datetime(dt_str):
-    return datetime.strptime(dt_str, "%Y-%m-%d %I:%M:%S %p")
-
-
-@bot.inline_handler(lambda query: query.query.strip().startswith('#history'))
-def handle_inline_query(inline_query):
-    try:
-        query_type = 'all' #inline_query.query.split(":")[1]
-        print(query_type)
-        offset = int(inline_query.offset) if inline_query.offset else 1
-        user_id = inline_query.from_user.id
-        results, next_offset = get_inline_results(user_id,query_type, offset)
-        bot.answer_inline_query(inline_query.id, results, next_offset=next_offset)
-    except Exception as e:
-        print(f"Error: {e}")
-
-
-
-def get_inline_results(chat_id,query_type, page=1, items_per_page=25):
-    if query_type in ['order', 'deposit', 'all']:
-        user = get_user(chat_id)
-        order_deposit = get_history(user, 'DEPOSIT:ORDER')
-        bot.send_message(chat_id,f"{order_deposit}")
-        data = order_deposit["orders"] + order_deposit["deposits"]
-        if query_type == 'order':
-            data = [d for d in data if 'order_id' in d]
-        elif query_type == 'deposit':
-            data = [d for d in data if 'deposit_id' in d]
-        data.sort(key=lambda x: parse_datetime(x["datetime"]), reverse=True)
-
-        # Pagination
-        start_index = (page - 1) * items_per_page
-        end_index = start_index + items_per_page
-        paginated_results = data[start_index:end_index]
-        next_offset = str(page + 1) if end_index < len(data) else ''
-
-        return format_inline_query_results(paginated_results), next_offset
-    else:
-        return [], ''
-
-
-def format_inline_query_results(results):
-    inline_results = []
-    for idx, result in enumerate(results, start=1):
-        if "order_id" in result:
-            description = f"Order ID: {result['order_id']}"
-            thumbnail = 'https://i.postimg.cc/DzVnGBMr/1000014742-removebg-preview.png'
+    elif action == 'getPrices':
+        service = request.args.get('service') or request.form.get('service') or None
+        country = request.args.get('country') or request.form.get('country') or None
+        server = request.args.get('server') or request.form.get('server')
+        if server in ['1','2','3']:
+            if service:
+                name = responses.get(service.replace(" ", "").lower(),service.replace(" ", "").lower())
+            if str(server) == str('1'):
+                code = service
+            elif str(server) == str('2'):
+                if country:
+                    flag = countryFlags["3"].get(country,"🏴‍☠️")
+                    country = countryFlags["5"].get(flag,"None")
+                else: 
+                    country = None
+                if service:
+                    code = name
+                else:
+                    code = None
+            elif str(server) == str('3'):
+                if service:
+                    code = get_value(listService, name)
+                else:
+                    code = None
+            else:
+                return jsonify({'status': 'error', 'message': 'Missing required parameter: server'}), 400
+            responses = get_api_prices(server,COUNTRY=country,SERVICE=code)
+            return jsonify(responses), 200
         else:
-            description = f"Deposit ID: {result['deposit_id']}"
-            thumbnail = 'https://i.postimg.cc/B6dpgP21/536113.png'
-
-        inline_results.append(types.InlineQueryResultArticle(
-            id=str(idx),
-            title="Detail",
-            description=description,
-            thumbnail_url= thumbnail,
-            input_message_content=types.InputTextMessageContent(message_text=description)
-        ))
-
-    return inline_results
-
-
-
-#CallBack Data Inline Buttons For BUY
-@bot.callback_query_handler(func=lambda call: call.data.startswith('BUY:NEW'))
-def callback_inline(call):
-    parts = call.data.split()
-    server = parts[1] if len(parts) > 1 else None
-    price = parts[2] if len(parts) > 2 else None
-    service = parts[3] if len(parts) > 3 else None
-    name = parts[4] if len(parts) > 4 else None
-    buycommand = parts[5] if len(parts) > 5 else None
-    if not server and not price and not service and not name:
-        return
-    bot.answer_callback_query(call.id, f"✅ Sᴇʀᴠᴇʀ Sᴇʟᴇᴄᴛᴇᴅ Sᴜᴄᴄᴇssғᴜʟʟʏ...")
+            return jsonify({'status': 'error', 'message': 'Missing required parameter: server',"short_code": "BAD_SERVER"}), 400
     
-    request = Get_Ser_Price_AD(server, service)
-    SerName = server.replace('1', '𝟷').replace('2', '𝟸').replace('3', '𝟹').replace('4', '𝟺')
-    text = f"<b>⦿ Sᴇʀᴠɪᴄᴇ ❯</b> {name} <b>〔{SerName}〕 \n\n↓ Cʜᴏᴏsᴇ Cᴏᴜɴᴛʀʏ Bᴇʟᴏᴡ</b>"
-    if server in ['1','2','3','4']:
-        try:
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,text=text, reply_markup=generate_markup(0, request,server, service, name,buycommand),parse_mode='html')
-        except Exception as e:
-            try:
-                bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,text=text, reply_markup=generate_markup(1, request,server, service, name,buycommand),parse_mode='html')
-            except Exception as e:
-                return
-            return
     
+    else:
+        return jsonify({'status': 'error', 'message': 'Unsupported action'}), 400
 
-#Chnage Server
-@bot.callback_query_handler(func=lambda call: call.data.startswith('/Buy_'))
-def change_ser(call):
-    user_id = call.message.chat.id
-    listService = load_data('serviceCode.json','r')
-    checker = load_data('CheckerList.json','r')
-    response = load_data('serviceForOne.json','r')
-    countryFlags = load_data('countriesFlag.json','r')
-    bot.answer_callback_query(call.id, f"🔥 Cʜᴀɴɢɪɴɢ Tʜᴇ Sᴇʀᴠᴇʀ...",show_alert=False)
-        
-    code = call.data[5:].replace(" ", "").lower()
-    if code in response:
-        keyboard = InlineKeyboardMarkup()
-        msg = bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.message_id,text=f"🔍 <b>Sᴇᴀʀᴄʜɪɴɢ Iɴ Pʀᴏɢʀᴇss..</b>.", parse_mode='html').message_id
-        name = response[code].replace(" ", "").lower()
-        Name = response[code].capitalize()
-        command = "BUY:NEW"
-        code2 = get_value(listService, name)
-        services = fetch_service(name, code2,code)
-        
-        country1, PriceServer1 = get_country_server_1or3(code,countryFlags['1'], services['1'],comissionPurchase, '1') 
-        if PriceServer1 is not None:
-            keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ1  ➨  {country1}  »»  💎 {PriceServer1}",callback_data=f'{command} 1 {PriceServer1} {code} {Name} {code}'))
-            
-        country2, PriceServer2 = get_country_server_2(name,countryFlags['2'],services['2'],comissionPurchase)
-        if PriceServer2 is not None:
-            keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ2  ➨  {country2}  »»  💎 {PriceServer2}",callback_data=f'{command} 2 {PriceServer2} {name} {Name} {code}'))
-        bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.message_id,text="⏳ <b>Rᴇǫᴜᴇsᴛɪɴɢ Sᴇʀᴠᴇʀ Fᴏʀ Oʀᴅᴇʀ..</b>.", parse_mode='html')
-            
-        country3, PriceServer3 = get_country_server_1or3(code2,countryFlags['3'],services['3'],comissionPurchase, '3') 
-        if PriceServer3 is not None:
-            keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ3  ➨  {country3}  »»  💎 {PriceServer3}",callback_data=f'{command} 3 {PriceServer3} {code2} {Name} {code}'))
-            
-        country4, PriceServer4 = get_country_server_4(code2,countryFlags['4'],services['4'],comissionPurchase) 
-        if PriceServer4 is not None:
-            keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ4  ➨  {country4}  »»  💎 {PriceServer4}",callback_data=f'{command} 4 {PriceServer4} {code2} {Name} {code}'))
-        try:
-            bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.message_id,text=f"<b>⊙ Sᴇʟᴇᴄᴛᴇᴅ Sᴇʀᴠɪᴄᴇ ❯</b> <code>{Name}</code><b>\n\n↓ Cʜᴏᴏsᴇ Sᴇʀᴠᴇʀ Bᴇʟᴏᴡ</b>",parse_mode="html", reply_markup=keyboard)
-        except Exception as e:
-            return
-        return
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1711,7 +1490,7 @@ def handle_buy(message):
     checker = load_data('CheckerList.json','r')
     response = load_data('serviceForOne.json','r')
     countryFlags = load_data('countriesFlag.json','r')
-        
+
     code = message.text[5:].replace(" ", "").lower()
     if code in response:
         keyboard = InlineKeyboardMarkup()
@@ -1721,53 +1500,85 @@ def handle_buy(message):
         command = "BUY:NEW"
         code2 = get_value(listService, name)
         services = fetch_service(name, code2,code)
-        
+
         country1, PriceServer1 = get_country_server_1or3(code,countryFlags['1'], services['1'],comissionPurchase,'1') 
         if PriceServer1 is not None:
             keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ1  ➨  {country1}  »»  💎 {PriceServer1}",callback_data=f'{command} 1 {PriceServer1} {code} {Name} {code}'))
-            
+
         country2, PriceServer2 = get_country_server_2(name,countryFlags['2'],services['2'],comissionPurchase)
         if PriceServer2 is not None:
             keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ2  ➨  {country2}  »»  💎 {PriceServer2}",callback_data=f'{command} 2 {PriceServer2} {name} {Name} {code}'))
 
         bot.edit_message_text(chat_id=user_id, message_id=msg, text="⏳ <b>Rᴇǫᴜᴇsᴛɪɴɢ Sᴇʀᴠᴇʀ Fᴏʀ Oʀᴅᴇʀ..</b>.", parse_mode='html')
-            
+
         country3, PriceServer3 = get_country_server_1or3(code2,countryFlags['3'],services['3'],comissionPurchase,'3') 
         if PriceServer3 is not None:
             keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ3  ➨  {country3}  »»  💎 {PriceServer3}",callback_data=f'{command} 3 {PriceServer3} {code2} {Name} {code}'))
-            
-        country4, PriceServer4 = get_country_server_4(code2,countryFlags['4'],services['4'],comissionPurchase) 
-        if PriceServer4 is not None:
-            keyboard.row(InlineKeyboardButton(f"Sᴇʀᴠᴇʀ4  ➨  {country4}  »»  💎 {PriceServer4}",callback_data=f'{command} 4 {PriceServer4} {code2} {Name} {code}'))
+
+        
         bot.edit_message_text(chat_id=user_id, message_id=msg, text=f"<b>⊙ Sᴇʟᴇᴄᴛᴇᴅ Sᴇʀᴠɪᴄᴇ ❯</b> <code>{Name}</code><b>\n\n↓ Cʜᴏᴏsᴇ Sᴇʀᴠᴇʀ Bᴇʟᴏᴡ</b>",parse_mode="html", reply_markup=keyboard)
         return
 
 
 
+is_running = False
 
 def start_bot():
-    while True:
-        try:
-            print("Bot is running")
-            bot.polling(non_stop=True)
-        except Exception as e:
-            error_message = f"Bot polling failed: {e}\n{traceback.format_exc()}"
-            print(error_message)
+    global is_running
+    if not is_running:
+        is_running = True
+        while True:
             try:
-                bot.send_message(AdminId, error_message)
-            except Exception as send_error:
-                print(f"Failed to send error message to admin: {send_error}")
-            time.sleep(10)
+                print("Bot is running")
+                bot.polling(none_stop=True)
+            except Exception as e:
+                error_message = f"Bot polling failed: {e}\n{traceback.format_exc()}"
+                print(error_message)
+                try:
+                    bot.send_message(AdminId, error_message)
+                except Exception as send_error:
+                    print(f"Failed to send error message to admin: {send_error}")
+                time.sleep(5)
+
+
+
+
+@app.route('/')
+def index():
+    return "Web server is running!"
+
+def web_run():
+    app.run(host='0.0.0.0', port=5000)
+
 
 if __name__ == '__main__':
-    bot_thread = threading.Thread(target=start_bot)
+    # Start threads for bot, order handling, deposit handling, and web server
+    bot_thread = threading.Thread(target=start_bot, daemon=True)
+    order_thread = threading.Thread(target=mainForOrders, args=("CurrentOrders.json",), daemon=True)  # Replace "OrderFile" with your file path
+    deposit_thread = threading.Thread(target=mainForDeposit, args=("CurrentDeposit.json",), daemon=True)  # Replace "DepositFile" with your file path
+    web_thread = threading.Thread(target=web_run, daemon=True)
+
+    # Start all threads
     bot_thread.start()
-
-    order_thread = threading.Thread(target=mainForOrders, args=(OrderFile,))
-    deposit_thread = threading.Thread(target=mainForDeposit, args=(DepositFile,))
-
     order_thread.start()
     deposit_thread.start()
+    web_thread.start()
 
+    # Join threads to the main thread
+    bot_thread.join()
     order_thread.join()
     deposit_thread.join()
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
