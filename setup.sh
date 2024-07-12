@@ -20,6 +20,15 @@ sudo yum install -y libjpeg-turbo-devel zlib-devel
 # Example:
 # git clone <your-repository-url>
 
+
+# Navigate to the repository directory
+cd /home/ec2-user/FlashTheFireAlwaysOnFireDontCopyMotherHindJaiHinfuRastraJaiShreeRamJaiShreeHanuman
+
+# Pull the latest changes
+git pull origin main
+
+echo "Repository updated successfully!"
+
 # Alternatively, if they are on your local machine, you can SCP them to the EC2 instance:
 # scp SmsChecker.py ec2-user@<your-ec2-instance-ip>:/home/ec2-user/
 # scp DepositChecker.py ec2-user@<your-ec2-instance-ip>:/home/ec2-user/
