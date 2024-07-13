@@ -1521,52 +1521,34 @@ def handle_buy(message):
 
 
 
-is_running = False
-
 def start_bot():
-    global is_running
-    if not is_running:
-        is_running = True
-        while True:
+    while True:
+        try:
+            print("Bot is running")
+            bot.polling(none_stop=True)
+        except Exception as e:
+            error_message = f"Bot polling failed: {e}\n{traceback.format_exc()}"
+            print(error_message)
             try:
-                print("Bot is running")
-                bot.polling(none_stop=True)
-            except Exception as e:
-                error_message = f"Bot polling failed: {e}\n{traceback.format_exc()}"
-                print(error_message)
-                try:
-                    bot.send_message(AdminId, error_message)
-                except Exception as send_error:
-                    print(f"Failed to send error message to admin: {send_error}")
-                time.sleep(5)
+                bot.send_message(AdminId, error_message)
+            except Exception as send_error:
+                print(f"Failed to send error message to admin: {send_error}")
+            time.sleep(5)
 
 @app.route('/')
 def index():
     return "Web server is running!"
 
-def web_run():
-    try:
-        app.run(host='0.0.0.0', port=5000)
-    except OSError as e:
-        if "Address already in use" in str(e):
-            print("Port 5000 is already in use. Trying a different port...")
-            app.run(host='0.0.0.0', port=5001)
+
+
+async def main():
+    # Start all tasks
+    await asyncio.gather(
+        start_bot(),
+        mainForOrders("CurrentOrders.json"),
+        mainForDeposit("CurrentDeposit.json"),
+        #web_run()
+    )
 
 if __name__ == '__main__':
-    # Start threads for bot, order handling, deposit handling, and web server
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
-    order_thread = threading.Thread(target=mainForOrders, args=("CurrentOrders.json",), daemon=True)  # Replace "OrderFile" with your file path
-    deposit_thread = threading.Thread(target=mainForDeposit, args=("CurrentDeposit.json",), daemon=True)  # Replace "DepositFile" with your file path
-    web_thread = threading.Thread(target=web_run, daemon=True)
-
-    # Start all threads
-    bot_thread.start()
-    order_thread.start()
-    deposit_thread.start()
-    web_thread.start()
-
-    # Join threads to the main thread
-    bot_thread.join()
-    order_thread.join()
-    deposit_thread.join()
-    web_thread.join()
+    asyncio.run(main())
