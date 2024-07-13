@@ -1531,12 +1531,13 @@ def start_bot():
     while True:
         try:
             bot.polling(none_stop=True)
-        except:
+        except Exception as e:
+            print(e)
             pass
-        #time.sleep(10)
+        time.sleep(10)
 
 if __name__ == '__main__':
     # Start the bot in a separate thread
     start_bot()
     # Run the Flask web server
-    app.run(host='0.0.0.0', port=5001)
+    #app.run(host='0.0.0.0', port=5001)
