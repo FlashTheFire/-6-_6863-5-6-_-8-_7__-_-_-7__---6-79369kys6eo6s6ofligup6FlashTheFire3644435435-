@@ -1531,27 +1531,15 @@ def start_bot():
         try:
             print("Bot is running")
             bot.polling(none_stop=True)
-        except Exception as e:
-            error_message = f"Bot polling failed: {e}\n{traceback.format_exc()}"
-            print(error_message)
+        except Exception as e;
             try:
-                bot.send_message(AdminId, error_message)
+                bot.send_message(AdminId, e)
             except Exception as send_error:
                 print(f"Failed to send error message to admin: {send_error}")
             time.sleep(5)
 
-def web_run():
-    try:
-        app.run(host='0.0.0.0', port=5000)
-    except OSError as e:
-        if "Address already in use" in str(e):
-            print("Port 5000 is already in use. Trying a different port...")
-            app.run(host='0.0.0.0', port=5001)
+
 
 if __name__ == '__main__':
     # Start the bot in a separate thread
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
-    bot_thread.start()
-
-    # Run the web server
-    web_run()
+    start_bot()
