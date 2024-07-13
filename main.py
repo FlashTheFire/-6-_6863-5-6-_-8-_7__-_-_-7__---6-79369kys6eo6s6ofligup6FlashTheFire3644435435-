@@ -1527,14 +1527,15 @@ def index():
     return "Web server is running!"
 
 def start_bot():
-    print("Bot is running")
+    print("starting")
     while True:
         try:
+            print("Bot is running")
             bot.polling(none_stop=True)
         except Exception as e:
             print(e)
             pass
-        time.sleep(10)
+        time.sleep(2)
 
 if __name__ == '__main__':
     # Start the bot in a separate thread
