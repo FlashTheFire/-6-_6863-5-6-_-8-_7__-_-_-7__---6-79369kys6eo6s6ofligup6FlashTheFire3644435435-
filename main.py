@@ -1521,6 +1521,11 @@ def handle_buy(message):
 
 
 
+
+@app.route('/')
+def index():
+    return "Web server is running!"
+
 def start_bot():
     while True:
         try:
@@ -1535,20 +1540,18 @@ def start_bot():
                 print(f"Failed to send error message to admin: {send_error}")
             time.sleep(5)
 
-@app.route('/')
-def index():
-    return "Web server is running!"
-
-
-
-async def main():
-    # Start all tasks
-    await asyncio.gather(
-        start_bot(),
-        mainForOrders("CurrentOrders.json"),
-        mainForDeposit("CurrentDeposit.json"),
-        #web_run()
-    )
+def web_run():
+    try:
+        app.run(host='0.0.0.0', port=5000)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print("Port 5000 is already in use. Trying a different port...")
+            app.run(host='0.0.0.0', port=5001)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Start the bot in a separate thread
+    bot_thread = threading.Thread(target=start_bot, daemon=True)
+    bot_thread.start()
+
+    # Run the web server
+    web_run()
