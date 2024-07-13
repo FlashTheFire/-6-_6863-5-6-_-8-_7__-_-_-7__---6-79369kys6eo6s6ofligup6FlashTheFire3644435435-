@@ -1531,7 +1531,7 @@ def start_bot():
         try:
             print("Bot is running")
             bot.polling(none_stop=True)
-        except Exception as e;
+        except Exception as e:
             try:
                 bot.send_message(AdminId, e)
             except Exception as send_error:
