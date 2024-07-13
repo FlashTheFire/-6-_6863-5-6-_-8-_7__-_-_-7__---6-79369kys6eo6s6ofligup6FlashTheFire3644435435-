@@ -1525,9 +1525,13 @@ def handle_buy(message):
 
 
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    return "Web server is running!"
+    if request.method == 'POST':
+        msg = request.get_json()
+        return "<h1>Something went wrong</h1>"
+    else:
+        return "<h1>Something went wrong</h1>"
 
 def start_bot():
     print("starting")
