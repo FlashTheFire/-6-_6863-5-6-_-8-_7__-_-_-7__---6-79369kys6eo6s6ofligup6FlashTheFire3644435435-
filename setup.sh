@@ -29,3 +29,12 @@ deactivate
 
 # Display a message indicating setup completion
 echo "Setup complete. To activate the virtual environment, run 'source venv/bin/activate'."
+
+# Optional: Test telebot installation
+echo "Creating test script to verify telebot installation..."
+
+cat <<EOL > test_telebot.py
+import telebot
+
+print("Telebot is installed correctly!")
+EOL
