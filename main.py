@@ -1533,12 +1533,10 @@ def start_bot():
             bot.polling(none_stop=True)
         except:
             pass
-        time.sleep(10)
+        #time.sleep(10)
 
 if __name__ == '__main__':
     # Start the bot in a separate thread
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
-    bot_thread.start()
-
+    start_bot()
     # Run the Flask web server
     app.run(host='0.0.0.0', port=5001)
