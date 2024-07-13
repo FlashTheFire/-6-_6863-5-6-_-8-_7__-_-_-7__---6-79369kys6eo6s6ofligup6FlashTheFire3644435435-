@@ -1529,8 +1529,11 @@ def index():
 def start_bot():
     print("Bot is running")
     while True:
-        # Polling for updates without error handling
-        bot.polling(none_stop=True)
+        try:
+            bot.polling(none_stop=True)
+        except:
+            pass
+        time.sleep(10)
 
 if __name__ == '__main__':
     # Start the bot in a separate thread
@@ -1538,4 +1541,4 @@ if __name__ == '__main__':
     bot_thread.start()
 
     # Run the Flask web server
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5001)
