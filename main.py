@@ -1,4 +1,7 @@
 import telebot
+from flask import Flask
+from flask import request
+from flask import Response
 from telebot.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, InputTextMessageContent, InlineQueryResultArticle, WebAppInfo
 import time
 import requests
@@ -1537,8 +1540,10 @@ def start_bot():
             pass
         time.sleep(2)
 
-if __name__ == '__main__':
+#if __name__ == '__main__':
     # Start the bot in a separate thread
-    start_bot()
+ #   start_bot()
     # Run the Flask web server
     #app.run(host='0.0.0.0', port=5001)
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", debug=False, port=5000)
