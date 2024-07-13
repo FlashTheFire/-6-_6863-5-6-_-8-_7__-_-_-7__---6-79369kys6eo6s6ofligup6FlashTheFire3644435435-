@@ -1527,19 +1527,15 @@ def index():
     return "Web server is running!"
 
 def start_bot():
+    print("Bot is running")
     while True:
-        try:
-            print("Bot is running")
-            bot.polling(none_stop=True)
-        except Exception as e:
-            try:
-                bot.send_message(AdminId, e)
-            except Exception as send_error:
-                print(f"Failed to send error message to admin: {send_error}")
-            time.sleep(5)
-
-
+        # Polling for updates without error handling
+        bot.polling(none_stop=True)
 
 if __name__ == '__main__':
     # Start the bot in a separate thread
-    start_bot()
+    bot_thread = threading.Thread(target=start_bot, daemon=True)
+    bot_thread.start()
+
+    # Run the Flask web server
+    app.run(host='0.0.0.0', port=5000)
